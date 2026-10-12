@@ -331,6 +331,19 @@ README、旧阶段文档、旧 dist/build 与 `desktop-release/九人圆桌桌�
 
 **桌面上多了一个工具：** `tools/make_share_zip.ps1` 用来生成可直接发送的分享包。它先建到临时文件、验证条目数/分隔符/CRC/敏感文件，全部通过才发布——因为曾出现过"手工建 zip 失败产生 0 字节坏包并覆盖好包"的事故。注意本机 PowerShell 执行策略禁止直接运行 .ps1，要加 `-ExecutionPolicy Bypass`。
 
+**坑：改完 `九人圆桌热点版\使用说明.txt` 之后必须补回 UTF-8 BOM。** 这个文件是要发给别人的，早前专门加过 BOM；用编辑工具改它会把 BOM 吃掉（第五批就发生过，已补回并重建 zip）。检查与修复：
+
+```powershell
+$p = "$env:USERPROFILE\Desktop\九人圆桌热点版\使用说明.txt"
+$b = [System.IO.File]::ReadAllBytes($p)
+if (-not ($b[0] -eq 0xEF -and $b[1] -eq 0xBB -and $b[2] -eq 0xBF)) {
+    $t = [System.IO.File]::ReadAllText($p, [System.Text.Encoding]::UTF8)
+    [System.IO.File]::WriteAllText($p, $t, (New-Object System.Text.UTF8Encoding($true)))
+}
+```
+
+改完记得重建分享包，否则 zip 里还是旧的说明文件。程序**代码**文件（`brainstorm/*.py`）用普通 UTF-8 即可，不需要 BOM；`运行开发版.bat` 例外，它必须是 **GBK + CRLF**。
+
 **明确延后：后台预取。** 它只影响等待时间、不影响讨论有效性，却要改动线程模型与并发约束，风险收益比不合适。注意第三、四期做完后，**每次点击会发 3～4 次模型请求**（编排 → 生成 → 质检，不合格再加一次回炉），这是用有效性换来的已知代价，等待会明显变长。
 
 **必须由用户验收、实施者不得代为宣称的：** 真实 DeepSeek 长讨论里"谁回应谁是否合理""讨论是否真的更有效"。单元测试只能证明调度规则与标记生效，证明不了手感。
