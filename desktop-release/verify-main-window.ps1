@@ -1,4 +1,4 @@
-param(
+﻿param(
     [Parameter(Mandatory = $true)][int]$ProcessId,
     [int]$TimeoutSeconds = 20
 )

@@ -1,4 +1,4 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 
 $sourceRoot = Join-Path $PSScriptRoot '九人圆桌桌面版-修复版'
 $desktopRoot = [Environment]::GetFolderPath('Desktop')
