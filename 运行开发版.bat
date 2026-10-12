@@ -4,15 +4,15 @@ cd /d "%~dp0"
 set "PYTHONPATH=%~dp0;%~dp0.qt-build-runtime"
 set "PY=C:\Users\14726\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe"
 
-echo æ­£åœ¨å¯åŠ¨å¼€å‘ç‰ˆï¼ˆå«æœ€æ–°ä»£ç æ”¹åŠ¨ï¼Œä¸æ˜¯æ¡Œé¢é‚£ä¸ªæ—§ EXEï¼‰...
+echo ÕýÔÚÆô¶¯¿ª·¢°æ£¨º¬×îÐÂ´úÂë¸Ä¶¯£¬²»ÊÇ×ÀÃæÄÇ¸ö¾É EXE£©...
 echo.
-echo å¯åŠ¨åŽè¯·å…ˆçœ‹å¤§åŽ…çš„é›†æˆçŠ¶æ€æç¤ºï¼š
-echo   æ˜¾ç¤ºã€ŒçœŸå®žæ¨¡åž‹ deepseek-chatã€= çœŸçš„åœ¨ç”¨ DeepSeek
-echo   æ˜¾ç¤ºã€Œç¦»çº¿æ¨¡æ‹Ÿã€æˆ–ã€Œæœªå…è®¸çœŸå®žæ¨¡åž‹ã€= æ²¡è¿žä¸Šæ¨¡åž‹ï¼Œè¿™ä¸€åœºæµ‹ä¸å‡ºæ•ˆæžœ
+echo Æô¶¯ºóÇëÏÈ¿´´óÌüµÄ¼¯³É×´Ì¬ÌáÊ¾£º
+echo   ÏÔÊ¾¡¸ÕæÊµÄ£ÐÍ deepseek-chat¡¹= ÕæµÄÔÚÓÃ DeepSeek
+echo   ÏÔÊ¾¡¸ÀëÏßÄ£Äâ¡¹»ò¡¸Î´ÔÊÐíÕæÊµÄ£ÐÍ¡¹= Ã»Á¬ÉÏÄ£ÐÍ£¬ÕâÒ»³¡²â²»³öÐ§¹û
 echo.
 
 "%PY%" app.py
 
 echo.
-echo ç¨‹åºå·²é€€å‡ºï¼Œè¿”å›žç  %ERRORLEVEL%
+echo ³ÌÐòÒÑÍË³ö£¬·µ»ØÂë %ERRORLEVEL%
 pause
