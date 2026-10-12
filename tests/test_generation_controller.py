@@ -8,11 +8,12 @@ try:
     from PySide6.QtWidgets import QApplication as QCoreApplication
     from brainstorm.engine import MockDiscussionProvider
     from brainstorm.llm import ProviderFailure
-    from brainstorm.models import Role, TrendSource, Utterance, ViewpointKind
+    from brainstorm.models import DiscussionSession, Role, TrendSource, Utterance, ViewpointKind
     from brainstorm.news import NewsFetchResult
     from brainstorm.providers import IntegrationStatus
     from brainstorm.session_controller import SessionController
     from brainstorm.storage import SessionStore
+    from brainstorm.turn_planner import detect_intervention
 except ModuleNotFoundError as exc:  # The source test suite also runs without Qt installed.
     QCoreApplication = None
     _IMPORT_ERROR = exc
@@ -126,6 +127,35 @@ class GenerationControllerTests(unittest.TestCase):
         controller.start("测试主题", [ROLE])
         process_until(lambda: bool(sessions))
         self.assertEqual(len(sessions), 1)
+
+    def test_moderator_batch_records_intervention_reason(self):
+        controller = self.track(SessionController(store=SessionStore(self._history_tmp)))
+        session = DiscussionSession(topic="社区养老", selected_role_ids=["trend", "builder"])
+        for index in range(6):
+            session.append_utterance(Utterance(
+                "trend" if index % 2 == 0 else "builder",
+                "趋势分析师" if index % 2 == 0 else "创业实践者",
+                f"第{index}条", ViewpointKind.ASSUMPTION, "动态交锋", origin="model",
+            ))
+        controller.playback.live = True
+        controller.playback.start(session)
+        controller._apply_batch([Utterance(
+            "moderator", "主持人", "本阶段整理", ViewpointKind.SUMMARY, "状态整理",
+            origin="model", intent="synthesize",
+        )])
+        expected = detect_intervention(session)[1]
+        self.assertTrue(expected)
+        self.assertEqual(session.discussion_state.host_intervention_reason, expected)
+
+    def test_role_batch_clears_stale_intervention_reason(self):
+        controller = self.track(SessionController(store=SessionStore(self._history_tmp)))
+        session = DiscussionSession(topic="社区养老", selected_role_ids=["trend"])
+        session.append_utterance(Utterance("trend", "趋势分析师", "开场", ViewpointKind.ASSUMPTION, "独立观点", origin="model"))
+        session.discussion_state.host_intervention_reason = "上一次介入"
+        controller.playback.live = True
+        controller.playback.start(session)
+        controller._apply_batch([Utterance("trend", "趋势分析师", "继续", ViewpointKind.ASSUMPTION, "动态交锋", origin="model")])
+        self.assertEqual(session.discussion_state.host_intervention_reason, "")
 
     def test_cancel_sets_provider_cancel_event(self):
         provider = SlowProvider()
