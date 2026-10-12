@@ -19,10 +19,11 @@ def build(*utterances):
 
 
 def say(speaker_id, speaker_name, content, kind=ViewpointKind.ASSUMPTION, phase="动态交锋",
-        intent="initial", replies_to=None):
+        intent="initial", replies_to=None, duplicate=False, stance_change=None):
     return Utterance(
         speaker_id, speaker_name, content, kind, phase,
         replies_to=replies_to, origin="model", intent=intent,
+        duplicate=duplicate, stance_change=stance_change,
     )
 
 
@@ -113,6 +114,108 @@ class TurnPlannerTests(unittest.TestCase):
         plan = plan_turn(session, [], DiscussionState())
         self.assertEqual(plan.speaker_id, "trend")
         self.assertEqual(plan.speaker_name, "趋势分析师")
+
+
+class InterventionTests(unittest.TestCase):
+    """Each of the five protocol triggers must be reachable on its own."""
+
+    def test_intervention_on_fully_argued_disagreement(self):
+        session = build(
+            say("builder", "创业实践者", "方案"),
+            say("skeptic", "怀疑者", "反例一", intent="challenge", replies_to="event-000000"),
+            say("skeptic", "怀疑者", "反例二", intent="challenge", replies_to="event-000000"),
+            say("skeptic", "怀疑者", "反例三", intent="challenge", replies_to="event-000000"),
+            say("builder", "创业实践者", "我缩小验证范围", kind=ViewpointKind.OPPORTUNITY, phase="正面反驳",
+                intent="support", replies_to="event-000000",
+                stance_change=StanceChange("坚持原方案", "缩小验证范围", "被反例说服，但仍保留成本疑虑")),
+            say("trend", "趋势分析师", "我补充一个角度"),
+        )
+        triggered, reason = detect_intervention(session)
+        self.assertTrue(triggered)
+        self.assertEqual(reason, "关键分歧已经充分交锋，需要主持人收束")
+
+    def test_intervention_on_important_consensus(self):
+        session = build(
+            say("trend", "趋势分析师", "目标"),
+            say("builder", "创业实践者", "同意一", intent="support", replies_to="event-000000"),
+            say("skeptic", "怀疑者", "同意二", intent="support", replies_to="event-000000"),
+            say("builder", "创业实践者", "同意三", intent="support", replies_to="event-000000"),
+            say("skeptic", "怀疑者", "另一个角度"),
+            say("trend", "趋势分析师", "再补充一点"),
+        )
+        triggered, reason = detect_intervention(session)
+        self.assertTrue(triggered)
+        self.assertEqual(reason, "已出现重要共识，需要主持人确认")
+
+    def test_intervention_on_rising_duplicates(self):
+        session = build(
+            say("trend", "趋势分析师", "一"),
+            say("builder", "创业实践者", "二"),
+            say("skeptic", "怀疑者", "三"),
+            say("trend", "趋势分析师", "四"),
+            say("builder", "创业实践者", "五", duplicate=True),
+            say("skeptic", "怀疑者", "六", duplicate=True),
+        )
+        triggered, reason = detect_intervention(session)
+        self.assertTrue(triggered)
+        self.assertEqual(reason, "重复观点增加，需要主持人整理")
+
+    def test_intervention_on_stalled_discussion(self):
+        session = build(
+            say("trend", "趋势分析师", "一"),
+            say("builder", "创业实践者", "二"),
+            say("trend", "趋势分析师", "三"),
+            say("builder", "创业实践者", "四"),
+            say("trend", "趋势分析师", "五"),
+            say("builder", "创业实践者", "六"),
+        )
+        triggered, reason = detect_intervention(session)
+        self.assertTrue(triggered)
+        self.assertEqual(reason, "发言集中在少数角色，讨论冷场")
+
+    def test_intervention_on_falling_new_information(self):
+        # Duplicate flags are not set yet (phase 4 introduces them), so this
+        # exercises the content-based branch: three distinct speakers, but only
+        # four distinct things said across six turns.
+        session = build(
+            say("trend", "趋势分析师", "一"),
+            say("trend", "趋势分析师", "一"),
+            say("builder", "创业实践者", "二"),
+            say("builder", "创业实践者", "二"),
+            say("skeptic", "怀疑者", "三"),
+            say("trend", "趋势分析师", "四"),
+        )
+        triggered, reason = detect_intervention(session)
+        self.assertTrue(triggered)
+        self.assertEqual(reason, "新观点减少，需要主持人整理")
+
+    def test_no_intervention_on_short_or_healthy_history(self):
+        short = build(say("trend", "趋势分析师", "一"))
+        self.assertEqual(detect_intervention(short), (False, ""))
+        healthy = build(
+            say("trend", "趋势分析师", "一"),
+            say("builder", "创业实践者", "我反对这个前提", intent="challenge", replies_to="event-000000"),
+            say("skeptic", "怀疑者", "我追问证据", intent="question", replies_to="event-000001"),
+            say("trend", "趋势分析师", "我补充数据", intent="elaborate", replies_to="event-000002"),
+            say("builder", "创业实践者", "我调整范围", phase="正面反驳", intent="support", replies_to="event-000002"),
+            say("skeptic", "怀疑者", "我保留疑虑", intent="question"),
+        )
+        self.assertEqual(detect_intervention(healthy), (False, ""))
+
+    def test_intervention_produces_a_moderator_plan(self):
+        session = build(
+            say("trend", "趋势分析师", "一"),
+            say("builder", "创业实践者", "二"),
+            say("trend", "趋势分析师", "三"),
+            say("builder", "创业实践者", "四"),
+            say("trend", "趋势分析师", "五"),
+            say("builder", "创业实践者", "六"),
+        )
+        plan = plan_turn(session, ROLES, DiscussionState())
+        self.assertTrue(plan.moderator)
+        self.assertEqual(plan.speaker_id, "moderator")
+        self.assertEqual(plan.phase, "状态整理")
+        self.assertEqual(plan.intervention_reason, "发言集中在少数角色，讨论冷场")
 
 
 if __name__ == "__main__":
