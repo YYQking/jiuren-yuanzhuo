@@ -12,6 +12,7 @@ try:
     from PySide6.QtGui import QFontDatabase
     from PySide6.QtCore import QCoreApplication, QEvent
     from brainstorm.engine import MockDiscussionProvider
+    from brainstorm.models import DiscussionSession, Utterance, ViewpointKind
     from brainstorm.qt_app import LobbyPage, MainWindow, RoundtablePage, SummaryPage
     from brainstorm.roles import DEFAULT_ROLES
     from brainstorm.session_controller import SessionController
@@ -303,6 +304,34 @@ class QtUiTests(unittest.TestCase):
         self.assertIn("离线模拟", page.transcript.toPlainText())
         summary = SummaryPage(session)
         self.assertIn("模型生成 + 离线模拟", summary.summary_meta.text())
+
+    def test_live_transcript_shows_reply_target_and_intervention_reason(self):
+        page = RoundtablePage(self.controller)
+        session = DiscussionSession(topic="社区养老", selected_role_ids=["builder", "skeptic"])
+        session.append_utterance(Utterance("builder", "创业实践者", "先做小试点", ViewpointKind.OPPORTUNITY, "独立观点", origin="model"))
+        session.append_utterance(Utterance("skeptic", "怀疑者", "没和替代方案比", ViewpointKind.RISK, "动态交锋",
+                                          replies_to="event-000000", origin="model", intent="challenge"))
+        self.controller.load(session)
+        page._utterance(session.utterances[1], 1, 2)
+        self.assertIn("回应 创业实践者", page.transcript.toPlainText())
+
+        session.discussion_state.host_intervention_reason = "发言集中在少数角色，讨论冷场"
+        moderator = session.append_utterance(Utterance(
+            "moderator", "主持人", "本阶段整理", ViewpointKind.SUMMARY, "状态整理", origin="model", intent="synthesize",
+        ))
+        page._utterance(moderator, 2, 3)
+        self.assertIn("介入原因：发言集中在少数角色，讨论冷场", page.transcript.toPlainText())
+
+    def test_history_transcript_shows_reply_target_and_intent(self):
+        page = RoundtablePage(self.controller)
+        session = DiscussionSession(topic="社区养老", selected_role_ids=["builder", "skeptic"])
+        session.append_utterance(Utterance("builder", "创业实践者", "先做小试点", ViewpointKind.OPPORTUNITY, "独立观点", origin="model"))
+        session.append_utterance(Utterance("skeptic", "怀疑者", "没和替代方案比", ViewpointKind.RISK, "动态交锋",
+                                          replies_to="event-000000", origin="model", intent="challenge"))
+        self.controller.load(session)
+        text = page.transcript.toPlainText()
+        self.assertIn("回应 创业实践者", text)
+        self.assertIn("challenge", text)
 
     def test_interjection_is_recorded_once_at_the_time_it_happens(self):
         page = RoundtablePage(self.controller)

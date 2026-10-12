@@ -525,10 +525,7 @@ class RoundtablePage(QWidget):
         self.canvas.set_state(session.topic, "已加载历史讨论" if self.controller.playback.state.value == "completed" else "讨论进行中", None)
         if self.controller.playback.state.value == "completed":
             self._history = list(session.utterances)
-            self.transcript.setPlainText("\n".join(
-                f"【{item.phase}】 {item.speaker_name} · {item.kind.value} · {session.utterance_source(item)}\n{item.content}\n"
-                for item in self._history
-            ))
+            self.transcript.setPlainText("\n\n".join(self._transcript_line(item) for item in self._history))
             self.phase_label.setText(f"已加载历史讨论 · 共 {len(self._history)} 条记录")
             if session.opportunity:
                 self._completed(session)
@@ -596,18 +593,37 @@ class RoundtablePage(QWidget):
         if text:
             self.phase_label.setText(f"{speaker} 正在生成…")
 
+    def _reply_label(self, utterance: Utterance) -> str:
+        if not utterance.replies_to or self.session is None:
+            return ""
+        target = next((item for item in self.session.utterances if item.event_id == utterance.replies_to), None)
+        return f" · 回应 {target.speaker_name}" if target is not None else ""
+
+    def _intervention_label(self, utterance: Utterance) -> str:
+        if utterance.speaker_id != "moderator" or utterance.phase != "状态整理" or self.session is None:
+            return ""
+        reason = self.session.discussion_state.host_intervention_reason
+        return f" · 介入原因：{reason}" if reason else ""
+
+    def _transcript_line(self, utterance: Utterance) -> str:
+        """Render one recorded turn; live turns and reopened history use this same form."""
+        source = self.session.utterance_source(utterance) if self.session else "未标记来源"
+        intent = f" · {utterance.intent}" if utterance.intent and utterance.intent != "initial" else ""
+        stance = " · 改变立场" if utterance.stance_change else ""
+        return (
+            f"【{utterance.phase}】 {utterance.speaker_name} · {utterance.kind.value}"
+            f"{intent}{stance}{self._reply_label(utterance)}{self._intervention_label(utterance)} · {source}"
+            f"\n{utterance.content}"
+        )
+
     def _utterance(self, utterance: Utterance, index: int, total: int) -> None:
         if self.session:
             self._show_integration(self.session)
         self._history.append(utterance)
         self.phase_label.setText(f"{utterance.phase}  ·  第 {index + 1} 条")
         self.canvas.set_state(status=f"{utterance.speaker_name} 正在发言", active_id=utterance.speaker_id if utterance.speaker_id != "moderator" else None)
-        source = self.session.utterance_source(utterance) if self.session else "未标记来源"
         self._show_current_text(utterance)
-        source = self.session.utterance_source(utterance) if self.session else "未标记来源"
-        intent = f" · {utterance.intent}" if utterance.intent and utterance.intent != "initial" else ""
-        stance = " · 改变立场" if utterance.stance_change else ""
-        self.transcript.append(f"【{utterance.phase}】 {utterance.speaker_name} · {utterance.kind.value}{intent}{stance} · {source}\n{utterance.content}\n")
+        self.transcript.append(self._transcript_line(utterance))
 
     def _show_current_text(self, utterance: Utterance) -> None:
         compact = getattr(self, "_compact", False)
@@ -615,7 +631,8 @@ class RoundtablePage(QWidget):
         content = utterance.content
         if compact and len(content) > 140:
             content = content[:140] + "…（全文见记录）"
-        self.bubble.setText(f"{utterance.speaker_name}  ·  {utterance.kind.value}  ·  {source}\n{content}")
+        labels = f"{self._reply_label(utterance)}{self._intervention_label(utterance)}"
+        self.bubble.setText(f"{utterance.speaker_name}  ·  {utterance.kind.value}{labels}  ·  {source}\n{content}")
         self.subtitle.setText(f"{utterance.speaker_name} · {utterance.phase}" if compact else utterance.content)
         self.subtitle.setToolTip(utterance.content)
 
