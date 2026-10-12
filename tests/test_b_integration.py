@@ -8,6 +8,8 @@ from brainstorm.providers import IntegrationStatus, resolve_providers
 from brainstorm.config import AppConfig
 from brainstorm.llm import AnthropicDiscussionProvider, OpenAICompatibleDiscussionProvider, ProviderFailure, TurnSpec
 from brainstorm.models import DiscussionSession, DiscussionState, Role, Utterance, ViewpointKind
+from brainstorm.roles import DEFAULT_ROLES
+from brainstorm.turn_planner import TurnPlan
 
 
 class BIntegrationTests(unittest.TestCase):
@@ -412,6 +414,127 @@ class BIntegrationTests(unittest.TestCase):
         self.assertIn("重复讲趋势", prompts[1])
         self.assertEqual(client.messages.calls, 3)
 
+    def test_turn_prompt_quotes_the_utterance_the_turn_must_answer(self):
+        """Measured before the fix, with a 21-turn history: the directive named
+        [event-000000] but its content was absent from the prompt, so the role was
+        told to answer something it could not read."""
+        marker = "UNIQUE_OPENING_MARKER_ALPHA"
+        session = DiscussionSession(topic="社区养老", selected_role_ids=["trend"])
+        session.append_utterance(Utterance("trend", "趋势分析师", marker, ViewpointKind.OPPORTUNITY, "独立观点", origin="model"))
+        for index in range(20):
+            session.append_utterance(Utterance(DEFAULT_ROLES[index % 9].id, DEFAULT_ROLES[index % 9].name,
+                                               f"后续第{index}条", ViewpointKind.ASSUMPTION, "动态交锋", origin="model"))
+        prompt = self._capture_turn_prompt(session)
+        self.assertIn(marker, prompt)
+        self.assertIn(session.utterances[0].event_id, prompt)
+
+    def test_turn_prompt_keeps_the_opening_position_of_each_role(self):
+        session = DiscussionSession(topic="社区养老", selected_role_ids=["trend"])
+        session.append_utterance(Utterance("trend", "趋势分析师", "首轮立场标记", ViewpointKind.OPPORTUNITY, "独立观点", origin="model"))
+        for index in range(20):
+            session.append_utterance(Utterance(DEFAULT_ROLES[index % 9].id, DEFAULT_ROLES[index % 9].name,
+                                               f"后续第{index}条", ViewpointKind.ASSUMPTION, "动态交锋", origin="model"))
+        prompt = self._capture_turn_prompt(session, reply_to=session.utterances[-1].event_id)
+        self.assertIn("最初立场", prompt)
+        self.assertIn("首轮立场标记", prompt)
+        self.assertEqual(prompt.count("首轮立场标记"), 1)
+
+    def test_the_quoted_target_is_not_repeated_as_an_opening_position(self):
+        session = DiscussionSession(topic="社区养老", selected_role_ids=["trend"])
+        session.append_utterance(Utterance("trend", "趋势分析师", "首轮立场标记", ViewpointKind.OPPORTUNITY, "独立观点", origin="model"))
+        for index in range(20):
+            session.append_utterance(Utterance(DEFAULT_ROLES[index % 9].id, DEFAULT_ROLES[index % 9].name,
+                                               f"后续第{index}条", ViewpointKind.ASSUMPTION, "动态交锋", origin="model"))
+        prompt = self._capture_turn_prompt(session)
+        self.assertEqual(prompt.count("首轮立场标记"), 1)
+
+    def test_short_history_does_not_repeat_positions_already_visible(self):
+        session = self._two_role_session()
+        prompt = self._capture_turn_prompt(session)
+        self.assertNotIn("最初立场", prompt)
+
+    def _capture_turn_prompt(self, session: DiscussionSession, reply_to: str | None = None) -> str:
+        captured = []
+
+        class Event:
+            text = '{"content":"发言","kind":"风险","intent":"challenge"}'
+
+        class Stream:
+            def __enter__(self): return self
+            def __exit__(self, *_): return False
+            def __iter__(self): return iter([Event()])
+
+        class Messages:
+            def stream(self, **kwargs):
+                captured.append(kwargs["messages"][0]["content"])
+                return Stream()
+
+        class Client:
+            messages = Messages()
+
+        provider = AnthropicDiscussionProvider(client=Client(), model="test-model")
+        plan = TurnPlan("trend", "趋势分析师", "正面反驳", "challenge", "风险",
+                        reply_to_event_id=reply_to or session.utterances[0].event_id,
+                        reason="测试", must_answer="回答最初的机会判断")
+        spec = TurnSpec(plan.speaker_id, plan.speaker_name, plan.phase, plan.kind_hint)
+        provider._generate_turn_result(session.topic, DEFAULT_ROLES, [], list(session.utterances), spec, plan=plan)
+        return captured[-1]
+
+    def test_orchestrator_cannot_park_the_floor_on_one_role(self):
+        """The model's pick used to bypass the fairness caps entirely.  Measured
+        before the fix: an orchestrator that always asked for 'trend' produced
+        ['trend'] * 6 -- six straight turns for one role."""
+        five_roles = [
+            Role("trend", "趋势分析师", "辨别变化", "#2563eb", "关注变化。"),
+            Role("builder", "创业实践者", "把机会转成产品", "#7c3aed", "关注谁付费。"),
+            Role("skeptic", "怀疑者", "寻找伪需求", "#dc2626", "主动寻找反例。"),
+            Role("researcher", "用户研究员", "区分人群", "#d97706", "区分使用者与购买者。"),
+            Role("creative", "跨界创意者", "连接不同领域", "#16a34a", "提出非主流方向。"),
+        ]
+        greedy = (
+            '{"key_question":"付费动机是什么？","speaker_id":"trend",'
+            '"must_answer":"说明谁会付钱","avoid":[],"intervene":false,"intervention_reason":"",'
+            '"consensus":[],"conflicts":[],"unresolved":[]}'
+        )
+        turn = '{"content":"我的发言","kind":"风险","intent":"challenge"}'
+        review_ok = self.REVIEW_OK
+
+        class Event:
+            def __init__(self, text): self.text = text
+
+        class Stream:
+            def __init__(self, text): self._text = text
+            def __enter__(self): return self
+            def __exit__(self, *_): return False
+            def __iter__(self): return iter([Event(self._text)])
+
+        class Messages:
+            def stream(self, **kwargs):
+                prompt = kwargs["messages"][0]["content"]
+                if "编排者" in prompt:
+                    return Stream(greedy)
+                if "质检者" in prompt:
+                    return Stream(review_ok)
+                return Stream(turn)
+
+        class Client:
+            messages = Messages()
+
+        provider = AnthropicDiscussionProvider(client=Client(), model="test-model")
+        session = DiscussionSession(topic="社区养老", selected_role_ids=[role.id for role in five_roles])
+        for index in range(6):
+            speaker_id = "trend" if index % 2 == 0 else "builder"
+            session.append_utterance(Utterance(speaker_id, speaker_id, f"第{index}条",
+                                               ViewpointKind.ASSUMPTION, "动态交锋", origin="model"))
+        speakers = []
+        for _ in range(4):
+            added = provider.extend_batch(session, DiscussionState(), roles=five_roles)
+            session.append_utterance(added[0])
+            speakers.append(added[0].speaker_id)
+        self.assertNotEqual(speakers, ["trend"] * 4, "编排不能绕开公平性上限")
+        self.assertLessEqual(max(speakers.count(name) for name in set(speakers)), 2)
+        self.assertNotIn(("trend", "trend", "trend"), list(zip(speakers, speakers[1:], speakers[2:])))
+
     def test_orchestration_failure_falls_back_to_the_local_plan(self):
         # 假客户端对每次请求都返回发言人内容，编排结果无法解析，必须退回本地计划
         provider, _, _ = self._orchestrated_provider([
@@ -437,6 +560,42 @@ class BIntegrationTests(unittest.TestCase):
         # 回炉请求必须把具体批评带回去
         self.assertIn("重复了 event-000000", prompts[3])
         self.assertIn("回避了付费动机", prompts[3])
+        # 回炉过的事实必须留在记录里，否则没人知道质检到底有没有生效
+        self.assertIn("重复了 event-000000", added[0].review_note)
+        self.assertIn("回避了付费动机", added[0].review_note)
+
+    def test_a_passing_review_leaves_no_review_note(self):
+        provider, _, _ = self._orchestrated_provider([
+            self.ORCHESTRATION_OK,
+            '{"content":"一次通过","kind":"机会","intent":"support"}',
+            self.REVIEW_OK,
+        ])
+        added = provider.extend_batch(self._two_role_session(), DiscussionState(), roles=self._two_roles())
+        self.assertEqual(added[0].review_note, "")
+
+    def test_the_host_summary_is_reviewed_too(self):
+        """Host turns used to skip the review entirely, so the one turn most likely
+        to be a bland restatement was the only one never checked."""
+        host_orchestration = (
+            '{"key_question":"是否已有共识？","speaker_id":"moderator","must_answer":"整理共识",'
+            '"avoid":[],"intervene":true,"intervention_reason":"发言集中在少数角色，讨论冷场",'
+            '"consensus":[],"conflicts":[],"unresolved":[]}'
+        )
+        provider, client, _ = self._orchestrated_provider([
+            host_orchestration,
+            '{"content":"第一版阶段整理","kind":"总结","intent":"synthesize"}',
+            '{"passed":false,"repeats":"重复了 event-000000","avoided":"","fabricated":""}',
+            '{"content":"第二版阶段整理","kind":"总结","intent":"synthesize"}',
+        ])
+        session = DiscussionSession(topic="社区养老", selected_role_ids=["trend", "builder"])
+        for index in range(6):
+            speaker_id = "trend" if index % 2 == 0 else "builder"
+            session.append_utterance(Utterance(speaker_id, speaker_id, f"第{index}条",
+                                               ViewpointKind.ASSUMPTION, "动态交锋", origin="model"))
+        added = provider.extend_batch(session, DiscussionState(), roles=self._two_roles())
+        self.assertEqual(added[0].speaker_id, "moderator")
+        self.assertEqual(added[0].content, "第二版阶段整理")
+        self.assertEqual(client.messages.calls, 4, "主持人发言也要走编排→生成→质检→回炉")
 
     def test_review_failure_keeps_the_turn_and_does_not_retry(self):
         provider, client, _ = self._orchestrated_provider([

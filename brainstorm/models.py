@@ -21,6 +21,14 @@ class ViewpointKind(str, Enum):
     SUMMARY = "总结"
 
 
+# How long a user interjection keeps steering the discussion, in utterances.
+# Lives here because both the scheduler (rule 1) and the prompt-building state
+# derivation must agree on it; when they disagreed, an interjection the planner
+# had already expired was still being fed to every later turn as a live
+# instruction.
+USER_INTERJECTION_WINDOW = 6
+
+
 @dataclass(frozen=True)
 class Role:
     id: str
@@ -78,6 +86,9 @@ class Utterance:
     verification: str = "unverified"
     stance_change: StanceChange | None = None
     duplicate: bool = False
+    # Set when the quality review sent this turn back for one rewrite, so the
+    # record shows that the review ran instead of hiding it.
+    review_note: str = ""
 
 
 @dataclass
@@ -135,6 +146,25 @@ class DiscussionSession:
         self.phase = self._phase_for(item.phase)
         return item
 
+    def pending_interjection(self, window: int = 0) -> Optional[Utterance]:
+        """The user interjection that is still steering this discussion.
+
+        An interjection stops being pending once a later turn replies to it, and
+        expires after ``window`` further utterances have been recorded.  ``window``
+        of 0 means "no expiry".
+        """
+        replied = {item.replies_to for item in self.utterances if item.replies_to}
+        for index in range(len(self.utterances) - 1, -1, -1):
+            item = self.utterances[index]
+            if item.speaker_id != "user" or item.intent != "user_instruction":
+                continue
+            if item.event_id in replied:
+                return None
+            if window and len(self.utterances) - 1 - index >= window:
+                return None
+            return item
+        return None
+
     def rebuild_state(self) -> DiscussionState:
         """Rebuild the cheap persisted snapshot; providers may enrich it."""
         self.discussion_state.role_stances = {
@@ -142,11 +172,8 @@ class DiscussionSession:
             for item in self.utterances
             if item.speaker_id not in {"moderator", "user"}
         }
-        self.discussion_state.pending_user_interjection = next(
-            (item.content for item in reversed(self.utterances)
-             if item.speaker_id == "user" and item.intent == "user_instruction"),
-            "",
-        )
+        interjection = self.pending_interjection(USER_INTERJECTION_WINDOW)
+        self.discussion_state.pending_user_interjection = interjection.content if interjection else ""
         if self.utterances:
             self.phase = self._phase_for(self.utterances[-1].phase)
         return self.discussion_state

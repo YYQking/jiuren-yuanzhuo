@@ -41,7 +41,16 @@ class PersistencePlaybackTests(unittest.TestCase):
         })
         self.assertEqual(restored.utterances[0].sequence, 0)
         self.assertEqual(restored.utterances[0].verification, "unverified")
+        self.assertEqual(restored.utterances[0].review_note, "")
         self.assertEqual(restored.phase, "开题")
+
+    def test_review_note_round_trips_without_a_schema_bump(self):
+        from dataclasses import replace
+        self.session.utterances[1] = replace(self.session.utterances[1], review_note="重复了 event-000000")
+        payload = session_to_dict(self.session)
+        self.assertEqual(payload["schema_version"], SCHEMA_VERSION)
+        restored = session_from_dict(payload)
+        self.assertEqual(restored.utterances[1].review_note, "重复了 event-000000")
 
     def test_mixed_content_sources_survive_history_and_export(self):
         from dataclasses import replace

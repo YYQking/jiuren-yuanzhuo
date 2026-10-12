@@ -60,8 +60,18 @@ def main() -> int:
             print(f"[!] 追加第 {step + 1} 条失败: {exc.code} / {exc.safe_message}", flush=True)
             break
         item = session.append_utterance(added[0])
+        # Mirror what the app's controller does with the orchestrator's in-request
+        # state refresh; without this the exported state looks empty even when the
+        # refresh worked, which would misreport the run.
+        refresh = getattr(provider, "last_state_refresh", None)
+        if refresh is not None:
+            session.discussion_state.consensus = list(refresh.consensus)
+            session.discussion_state.conflicts = list(refresh.conflicts)
+            session.discussion_state.unresolved_questions = list(refresh.unresolved)
+            provider.last_state_refresh = None
+        note = f" · 质检重写：{item.review_note}" if item.review_note else ""
         print(f"[{step + 1}/{args.extra}] {item.speaker_name} · {item.phase} · {item.intent}"
-              f" · 回应={item.replies_to or '无'} ({time.perf_counter() - t:.1f}s)", flush=True)
+              f" · 回应={item.replies_to or '无'} ({time.perf_counter() - t:.1f}s){note}", flush=True)
 
     print("[i] 生成结束总结中……", flush=True)
     t = time.perf_counter()

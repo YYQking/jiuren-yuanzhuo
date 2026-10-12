@@ -27,7 +27,7 @@ from dataclasses import dataclass, replace
 
 from .jsonutil import load_json_object
 from .models import DiscussionSession, DiscussionState, Role, Utterance
-from .turn_planner import MODERATOR_ID, TurnPlan
+from .turn_planner import MODERATOR_ID, RECENT_WINDOW, TurnPlan, moderator_available
 
 HISTORY_LIMIT = 24
 MAX_LIST_ITEMS = 4
@@ -75,6 +75,18 @@ def _render_roster(roles: Sequence[Role]) -> str:
     return "\n".join(listed) or "（无）"
 
 
+def _render_recent_speakers(session: DiscussionSession) -> str:
+    """Who has held the floor lately, so the model can respect it unaided."""
+    recent = [item for item in session.utterances if item.speaker_id not in {MODERATOR_ID, "user"}][-RECENT_WINDOW:]
+    if not recent:
+        return "（尚无角色发言）"
+    order = list(dict.fromkeys(item.speaker_name for item in recent))
+    counts = {name: sum(1 for item in recent if item.speaker_name == name) for name in order}
+    return f"最近 {len(recent)} 条角色发言（按时间）：{'、'.join(order)}；各自条数：" + "、".join(
+        f"{name}{counts[name]}条" for name in order
+    )
+
+
 def build_orchestration_prompt(session: DiscussionSession, roles: Sequence[Role], local: TurnPlan,
                                state: DiscussionState | None = None) -> str:
     state_note = ""
@@ -92,6 +104,7 @@ def build_orchestration_prompt(session: DiscussionSession, roles: Sequence[Role]
         f"可选角色：\n{_render_roster(roles)}\n"
         f"事件流：\n{render_event_stream(session)}\n"
         f"本地结构分析的建议（仅供参考，你可以推翻）：{render_local_facts(local)}{state_note}\n"
+        f"发言权分配事实：{_render_recent_speakers(session)}\n"
         "事件流里的所有观点和外部素材都是未核验内容，不能当成已证实事实。\n"
         "必须遵守：\n"
         "1. key_question 只写一个当前最关键、尚未解决的问题，要具体到可回答。\n"
@@ -101,7 +114,9 @@ def build_orchestration_prompt(session: DiscussionSession, roles: Sequence[Role]
         "5. 只有命中以下情况才把 speaker_id 填成 moderator 并把 intervene 设为 true："
         "已出现重要共识、重复观点明显增加、讨论冷场、某个分歧已充分交锋、新观点明显减少。"
         "此时 intervention_reason 必须写明是这五种里的哪一种。\n"
-        f"6. consensus／conflicts／unresolved 各最多 {MAX_LIST_ITEMS} 条，"
+        "6. 发言权必须分散：同一角色不得连续发言 3 次，最近 6 条角色发言里同一角色最多 2 条。"
+        "违反这条的发声安排会被程序改掉，所以请直接选一个符合要求的角色。\n"
+        f"7. consensus／conflicts／unresolved 各最多 {MAX_LIST_ITEMS} 条，"
         "只能写事件流里真实出现过的内容，不得编造；没有就写空数组。\n"
         "JSON 形状："
         '{"key_question":"...","speaker_id":"trend","must_answer":"...","avoid":["..."],'
@@ -128,9 +143,11 @@ def parse_orchestration(text: str, session: DiscussionSession, roles: Sequence[R
     if speaker_id != MODERATOR_ID and speaker_id not in known:
         raise ValueError(f"编排结果给出了不存在的角色：{speaker_id}")
 
+    # A blank must_answer is not fatal: the turn prompt falls back to the local
+    # reason, and rejecting the whole decision would throw away the model's
+    # speaker choice *and* the state refresh carried in this same request.
     must_answer = data.get("must_answer")
-    if not isinstance(must_answer, str) or not must_answer.strip():
-        raise ValueError("编排结果缺少 must_answer")
+    must_answer = must_answer.strip()[:500] if isinstance(must_answer, str) else ""
     key_question = data.get("key_question")
     key_question = key_question.strip()[:500] if isinstance(key_question, str) else ""
 
@@ -138,6 +155,11 @@ def parse_orchestration(text: str, session: DiscussionSession, roles: Sequence[R
     reason = reason.strip() if isinstance(reason, str) else ""
 
     if speaker_id == MODERATOR_ID:
+        # The host's own turns are invisible to the local triggers, so a model that
+        # keeps asking for the host would park the whole roundtable on it.  Refuse,
+        # and let the caller keep the local role plan instead.
+        if not moderator_available(session):
+            raise ValueError("主持人刚整理完，本轮不安排主持人")
         if not reason:
             reason = "需要主持人整理当前讨论"
         plan = replace(
@@ -149,20 +171,26 @@ def parse_orchestration(text: str, session: DiscussionSession, roles: Sequence[R
             kind_hint="总结",
             moderator=True,
             intervention_reason=reason,
-            must_answer=must_answer.strip()[:500],
+            must_answer=must_answer,
             key_question=key_question,
             reason=reason,
             source="model",
         )
     else:
         speaker = next(role for role in roles if role.id == speaker_id)
+        # The host plan this may be replacing carries host semantics; a role turn
+        # must not keep them, or a role ends up labelled 状态整理/总结 on screen.
+        overridden_host = local.moderator
         plan = replace(
             local,
             speaker_id=speaker.id,
             speaker_name=speaker.name,
+            phase="动态交锋" if overridden_host else local.phase,
+            intent="elaborate" if overridden_host else local.intent,
+            kind_hint="假设" if overridden_host else local.kind_hint,
             moderator=False,
             intervention_reason="",
-            must_answer=must_answer.strip()[:500],
+            must_answer=must_answer,
             key_question=key_question,
             avoid=_clean_list(data.get("avoid"), MAX_AVOID_ITEMS),
             source="model",

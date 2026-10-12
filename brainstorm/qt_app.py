@@ -647,6 +647,12 @@ class RoundtablePage(QWidget):
         reason = self.session.discussion_state.host_intervention_reason
         return f" · 介入原因：{reason}" if reason else ""
 
+    def _review_label(self, utterance: Utterance) -> str:
+        """Say so when the quality check sent this turn back for a rewrite."""
+        if not utterance.review_note:
+            return ""
+        return f" · 质检重写：{utterance.review_note}"
+
     def _transcript_line(self, utterance: Utterance) -> str:
         """Render one recorded turn; live turns and reopened history use this same form."""
         source = self.session.utterance_source(utterance) if self.session else "未标记来源"
@@ -655,6 +661,7 @@ class RoundtablePage(QWidget):
         return (
             f"【{utterance.phase}】 {utterance.speaker_name} · {utterance.kind.value}"
             f"{intent}{stance}{self._reply_label(utterance)}{self._intervention_label(utterance)} · {source}"
+            f"{self._review_label(utterance)}"
             f"\n{utterance.content}"
         )
 

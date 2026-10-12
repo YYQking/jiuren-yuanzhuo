@@ -449,6 +449,18 @@ class QtUiTests(unittest.TestCase):
         page._utterance(moderator, 2, 3)
         self.assertIn("介入原因：发言集中在少数角色，讨论冷场", page.transcript.toPlainText())
 
+    def test_transcript_shows_when_a_turn_was_sent_back_for_a_rewrite(self):
+        """The rewrite path has never fired on the real model, so nothing in the
+        app could show whether it works; the record now carries the criticism."""
+        page = RoundtablePage(self.controller)
+        session = DiscussionSession(topic="社区养老", selected_role_ids=["builder"])
+        session.append_utterance(Utterance("builder", "创业实践者", "重写后的发言", ViewpointKind.RISK, "动态交锋",
+                                           origin="model", review_note="重复了 event-000000"))
+        self.controller.load(session)
+        page._utterance(session.utterances[0], 0, 1)
+        self.assertIn("质检重写", page.transcript.toPlainText())
+        self.assertIn("重复了 event-000000", page.transcript.toPlainText())
+
     def test_history_transcript_shows_reply_target_and_intent(self):
         page = RoundtablePage(self.controller)
         session = DiscussionSession(topic="社区养老", selected_role_ids=["builder", "skeptic"])

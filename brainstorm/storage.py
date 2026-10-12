@@ -103,6 +103,7 @@ def session_to_dict(session: DiscussionSession) -> dict[str, Any]:
                     "triggered_by": list(item.stance_change.triggered_by),
                 } if item.stance_change else None,
                 "duplicate": item.duplicate,
+                "review_note": item.review_note,
             }
             for item in session.utterances
         ],
@@ -173,6 +174,7 @@ def session_from_dict(data: dict[str, Any]) -> DiscussionSession:
                 verification=str(item.get("verification", "unverified")),
                 stance_change=stance_change,
                 duplicate=bool(item.get("duplicate", False)),
+                review_note=str(item.get("review_note", "")),
             ))
         except (KeyError, TypeError, ValueError) as exc:
             raise ValueError("invalid utterance") from exc

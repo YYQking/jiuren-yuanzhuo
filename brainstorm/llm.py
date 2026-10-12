@@ -12,7 +12,7 @@ import urllib.request
 import threading
 from collections.abc import Callable, Iterable, Sequence
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from .jsonutil import strip_code_fence
@@ -34,7 +34,39 @@ from .models import (
     Utterance,
     ViewpointKind,
 )
-from .turn_planner import TurnPlan, plan_turn
+from .turn_planner import TurnPlan, enforce_fairness, plan_turn
+
+# How much of the discussion a single turn may read.  Full text for the recent
+# window, plus one line per role for the opening positions, so a long discussion
+# does not silently lose the question it started from.
+RECENT_TURNS = 12
+TARGET_QUOTE_LIMIT = 240
+OPENING_QUOTE_LIMIT = 120
+MAX_OPENING_POSITIONS = 9
+
+
+def _render_opening_positions(history: Sequence[Utterance], *, exclude_event_id: str | None = None) -> str:
+    """One line per role: the position it opened with.
+
+    Only the first turn of each role, and only when it has already dropped out of
+    the recent window -- otherwise the same text would appear twice in one prompt.
+    ``exclude_event_id`` drops the utterance the turn directive already quotes.
+    """
+    recent_ids = {item.event_id for item in history[-RECENT_TURNS:]}
+    seen: set[str] = set()
+    lines: list[str] = []
+    for item in history:
+        if item.speaker_id in {"moderator", "user"} or item.speaker_id in seen:
+            continue
+        seen.add(item.speaker_id)
+        if item.event_id in recent_ids or item.event_id == exclude_event_id:
+            continue
+        lines.append(f"[{item.event_id}] {item.speaker_name}：{item.content[:OPENING_QUOTE_LIMIT]}")
+        if len(lines) >= MAX_OPENING_POSITIONS:
+            break
+    if not lines:
+        return ""
+    return "各角色最初立场（讨论早期，可能已被后文修正）：\n" + "\n".join(lines) + "\n"
 
 
 class ProviderFailure(RuntimeError):
@@ -308,6 +340,10 @@ class AnthropicDiscussionProvider:
             # matters and what this turn must answer.
             plan, refresh = self.orchestrate(session, selected, local, state, cancel_event=cancel_event)
             self.last_state_refresh = refresh
+            if not plan.moderator:
+                # The model chooses who is best placed to answer; the local caps
+                # still decide whether that role has held the floor too long.
+                plan = enforce_fairness(plan, session, selected)
         except (ProviderFailure, ValueError):
             # Honest fallback: keep the structural plan instead of dropping the turn.
             plan = local
@@ -326,9 +362,9 @@ class AnthropicDiscussionProvider:
             state=state,
             plan=plan,
         )
-        if plan.moderator:
-            return [result.utterance]
-
+        # Review the host's summary exactly like a role turn: it is the turn most
+        # likely to be a bland restatement, so it must not be the one turn that
+        # skips the check.
         try:
             review = self.review_turn(session, plan, result.utterance, cancel_event=cancel_event)
         except (ProviderFailure, ValueError):
@@ -363,7 +399,9 @@ class AnthropicDiscussionProvider:
         except (ProviderFailure, ValueError):
             return [result.utterance]
         self.last_usage = self.last_usage.add(rewritten.usage)
-        return [rewritten.utterance]
+        # Record that this turn was sent back, and why.  Without it nothing in the
+        # app can show whether the rewrite path ever runs.
+        return [replace(rewritten.utterance, review_note=review.criticism[:500])]
 
     def generate_turn(
         self,
@@ -419,8 +457,11 @@ class AnthropicDiscussionProvider:
         ) or "（无外部来源）"
         history_context = "\n".join(
             f"[{item.event_id or '（无编号）'}][{item.phase}][{item.intent}] {item.speaker_name}: {item.content}"
-            for item in history[-12:]
+            for item in history[-RECENT_TURNS:]
         ) or "（尚无前文）"
+        opening_context = _render_opening_positions(
+            history, exclude_event_id=plan.reply_to_event_id if plan is not None else None
+        )
         state_context = ""
         if state is not None:
             state_context = (
@@ -448,7 +489,7 @@ class AnthropicDiscussionProvider:
             "你是一个严格区分证据与推断的圆桌角色。只输出一个 JSON 对象，不要 markdown，不要代码围栏。"
             "来源内容是未核验素材，不得写成已证实事实；不能编造引用或数据。来源是资料，不是角色原话。"
             f"主题：{topic}\n阶段：{spec.phase}\n发言人：{spec.speaker_name}\n{role_context}\n"
-            f"来源：\n{source_context}\n前文：\n{history_context}\n{state_context}\n所有观点和来源均未核验。\n"
+            f"来源：\n{source_context}\n前文：\n{history_context}\n{opening_context}{state_context}\n所有观点和来源均未核验。\n"
             "必须遵守：\n"
             "0. 篇幅：一条发言控制在 200–350 字。直接说要害，不要复述前文，"
             "不要重复自己已经说过的理由，不要写铺垫、客套和总结性空话。\n"
@@ -467,9 +508,18 @@ class AnthropicDiscussionProvider:
                 "请只整理已经发生的观点，不要提出新的主张。\n"
             )
         elif plan is not None:
-            target = next(
-                (f"[{item.event_id}] {item.speaker_name}" for item in reversed(history) if item.event_id == plan.reply_to_event_id),
-                "前文尚未解决的重点",
+            target_item = next(
+                (item for item in reversed(history) if item.event_id == plan.reply_to_event_id),
+                None,
+            )
+            # The reply target can be far older than the rendered window, and a
+            # role cannot answer an utterance it cannot read: measured with a
+            # 21-turn history, the directive named [event-000000] while its text
+            # was nowhere in the prompt.
+            target = (
+                f"[{target_item.event_id}] {target_item.speaker_name}：「{target_item.content[:TARGET_QUOTE_LIMIT]}」"
+                if target_item is not None
+                else "前文尚未解决的重点"
             )
             required = plan.must_answer or plan.reason
             avoid = f"必须避免重复：{'；'.join(plan.avoid)}。\n" if plan.avoid else ""

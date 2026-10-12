@@ -43,6 +43,18 @@ class OrchestrationPromptTests(unittest.TestCase):
         prompt = build_orchestration_prompt(session_with(), ROLES, local_plan())
         self.assertIn("未核验", prompt)
 
+    def test_prompt_states_the_fairness_caps_and_recent_speakers(self):
+        """The model must be told the floor-sharing rule, otherwise the local
+        guard has to overrule it after the fact."""
+        turns = []
+        for index in range(6):
+            speaker_id = "trend" if index % 2 == 0 else "builder"
+            turns.append(Utterance(speaker_id, speaker_id, f"第{index}条", ViewpointKind.ASSUMPTION, "动态交锋"))
+        prompt = build_orchestration_prompt(session_with(*turns), ROLES, local_plan())
+        self.assertIn("连续", prompt)
+        self.assertIn("最近", prompt)
+        self.assertIn("趋势分析师", prompt)
+
 
 class OrchestrationParseTests(unittest.TestCase):
     def test_parses_plan_and_state_refresh(self):
@@ -75,17 +87,83 @@ class OrchestrationParseTests(unittest.TestCase):
         self.assertEqual(plan.phase, "状态整理")
         self.assertEqual(plan.intervention_reason, "已出现重要共识")
 
+    def test_moderator_decision_is_rejected_while_the_host_is_in_cooldown(self):
+        """A model that keeps asking for the host must not be able to park the
+        roundtable on the host; rejecting makes the caller fall back to the local
+        role plan."""
+        turns = []
+        for index in range(6):
+            speaker_id = "trend" if index % 2 == 0 else "builder"
+            turns.append(Utterance(speaker_id, speaker_id, f"第{index}条", ViewpointKind.ASSUMPTION, "动态交锋"))
+        turns.append(Utterance("moderator", "主持人", "本阶段整理", ViewpointKind.SUMMARY, "状态整理"))
+        session = session_with(*turns)
+        payload = (
+            '{"key_question":"是否已有共识？","speaker_id":"moderator","must_answer":"整理共识",'
+            '"avoid":[],"intervene":true,"intervention_reason":"已出现重要共识",'
+            '"consensus":[],"conflicts":[],"unresolved":[]}'
+        )
+        with self.assertRaises(ValueError):
+            parse_orchestration(payload, session, ROLES, local_plan())
+
+    def test_moderator_decision_is_accepted_when_the_host_has_not_just_spoken(self):
+        turns = []
+        for index in range(6):
+            speaker_id = "trend" if index % 2 == 0 else "builder"
+            turns.append(Utterance(speaker_id, speaker_id, f"第{index}条", ViewpointKind.ASSUMPTION, "动态交锋"))
+        payload = (
+            '{"key_question":"是否已有共识？","speaker_id":"moderator","must_answer":"整理共识",'
+            '"avoid":[],"intervene":true,"intervention_reason":"已出现重要共识",'
+            '"consensus":[],"conflicts":[],"unresolved":[]}'
+        )
+        plan, _ = parse_orchestration(payload, session_with(*turns), ROLES, local_plan())
+        self.assertTrue(plan.moderator)
+
     def test_unknown_speaker_raises_so_the_caller_can_fall_back(self):
         payload = ('{"key_question":"x","speaker_id":"nobody","must_answer":"y","avoid":[],'
                    '"intervene":false,"intervention_reason":"","consensus":[],"conflicts":[],"unresolved":[]}')
         with self.assertRaises(ValueError):
             parse_orchestration(payload, session_with(), ROLES, local_plan())
 
-    def test_missing_must_answer_raises(self):
-        payload = ('{"key_question":"x","speaker_id":"trend","avoid":[],'
-                   '"intervene":false,"intervention_reason":"","consensus":[],"conflicts":[],"unresolved":[]}')
-        with self.assertRaises(ValueError):
-            parse_orchestration(payload, session_with(), ROLES, local_plan())
+    def test_overriding_the_host_with_a_role_also_resets_the_host_phase(self):
+        """Measured before the fix: a role turn kept phase 状态整理 / kind 总结 /
+        intent synthesize from the host plan it replaced."""
+        host_plan = TurnPlan("moderator", "主持人", "状态整理", "synthesize", "总结",
+                            reason="发言集中在少数角色，讨论冷场", moderator=True,
+                            intervention_reason="发言集中在少数角色，讨论冷场")
+        payload = ('{"key_question":"x","speaker_id":"builder","must_answer":"说明谁付钱",'
+                   '"avoid":[],"intervene":false,"intervention_reason":"",'
+                   '"consensus":[],"conflicts":[],"unresolved":[]}')
+        plan, _ = parse_orchestration(payload, session_with(), ROLES, host_plan)
+        self.assertEqual(plan.speaker_id, "builder")
+        self.assertFalse(plan.moderator)
+        self.assertEqual(plan.intervention_reason, "")
+        self.assertEqual(plan.phase, "动态交锋")
+        self.assertEqual(plan.kind_hint, "假设")
+        self.assertEqual(plan.intent, "elaborate")
+
+    def test_a_role_plan_keeps_its_own_phase_when_the_speaker_changes(self):
+        local = TurnPlan("trend", "趋势分析师", "正面反驳", "challenge", "风险", reason="质疑尚未回应")
+        payload = ('{"key_question":"x","speaker_id":"builder","must_answer":"说明谁付钱",'
+                   '"avoid":[],"intervene":false,"intervention_reason":"",'
+                   '"consensus":[],"conflicts":[],"unresolved":[]}')
+        plan, _ = parse_orchestration(payload, session_with(), ROLES, local)
+        self.assertEqual(plan.phase, "正面反驳")
+        self.assertEqual(plan.kind_hint, "风险")
+        self.assertEqual(plan.intent, "challenge")
+
+    def test_missing_must_answer_keeps_the_speaker_and_the_state_refresh(self):
+        """One sloppy field used to discard the model's speaker choice and the
+        state refresh together.  The turn prompt already falls back to the local
+        reason, so a usable decision must survive."""
+        payload = ('{"key_question":"x","speaker_id":"builder","avoid":["重复讲趋势"],'
+                   '"intervene":false,"intervention_reason":"",'
+                   '"consensus":["先做小范围试点"],"conflicts":[],"unresolved":["付费意愿"]}')
+        plan, refresh = parse_orchestration(payload, session_with(), ROLES, local_plan())
+        self.assertEqual(plan.speaker_id, "builder")
+        self.assertEqual(plan.must_answer, "")
+        self.assertEqual(plan.avoid, ("重复讲趋势",))
+        self.assertEqual(refresh.consensus, ("先做小范围试点",))
+        self.assertEqual(refresh.unresolved, ("付费意愿",))
 
     def test_malformed_payload_raises(self):
         with self.assertRaises(ValueError):

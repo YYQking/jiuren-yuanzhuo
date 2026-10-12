@@ -14,14 +14,15 @@ import re
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 
-from .models import DiscussionSession, DiscussionState, Role, Utterance
+from .models import USER_INTERJECTION_WINDOW, DiscussionSession, DiscussionState, Role, Utterance
 
 MODERATOR_ID = "moderator"
 USER_ID = "user"
 
 # Bounds keep every rule local and cheap: a stale interjection or a very old
-# question must not steer the discussion forever.
-USER_WINDOW = 6
+# question must not steer the discussion forever.  The interjection window is
+# shared with the prompt-building state derivation so the two cannot disagree.
+USER_WINDOW = USER_INTERJECTION_WINDOW
 QUESTION_WINDOW = 12
 MAX_SILENT_TURNS = 3
 MAX_CONSECUTIVE_SAME_SPEAKER = 2
@@ -34,6 +35,13 @@ MAX_CONSECUTIVE_SAME_SPEAKER = 2
 # never spoke again.
 RECENT_WINDOW = 6
 MAX_RECENT_TURNS = 2
+
+# The host's own turns are excluded from every trigger below, so a trigger that
+# is true stays true after the host speaks.  Without a cooldown the planner then
+# schedules the host again on the next click, and again, and the nine roles never
+# get the floor back.  Measured: three consecutive plan_turn calls all returned
+# moderator while "发言集中在少数角色" remained true.
+MODERATOR_COOLDOWN_TURNS = 4
 
 
 @dataclass(frozen=True)
@@ -171,6 +179,19 @@ def detect_intervention(session: DiscussionSession, recent: int = 6) -> tuple[bo
     return False, ""
 
 
+def moderator_available(session: DiscussionSession) -> bool:
+    """Whether the host may take the floor again yet.
+
+    Counted in role turns taken since the host last spoke, so a user interjection
+    does not freeze the host.  A host that never spoke is always available --
+    ``_turns_since_spoke`` cannot express that on a short history, where it
+    returns ``len(utterances) + 1``.
+    """
+    if _last_index(session, MODERATOR_ID) < 0:
+        return True
+    return _turns_since_spoke(session, MODERATOR_ID) >= MODERATOR_COOLDOWN_TURNS
+
+
 def plan_turn(
     session: DiscussionSession,
     roles: Sequence[Role],
@@ -193,7 +214,7 @@ def plan_turn(
         )
 
     should_intervene, intervention_reason = detect_intervention(session)
-    if should_intervene:
+    if should_intervene and moderator_available(session):
         return TurnPlan(
             MODERATOR_ID, "主持人", "状态整理", "synthesize", "总结",
             reason=intervention_reason, moderator=True, intervention_reason=intervention_reason,
@@ -202,11 +223,8 @@ def plan_turn(
     replied = _replied_ids(session)
 
     # Rule 1: an unanswered user interjection outranks everything else.
-    interjection = next(
-        (item for item in reversed(session.utterances[-USER_WINDOW:]) if item.speaker_id == USER_ID),
-        None,
-    )
-    if interjection is not None and interjection.event_id not in replied:
+    interjection = session.pending_interjection(USER_WINDOW)
+    if interjection is not None:
         speaker = _least_spoken(candidates, session)
         if speaker is not None:
             return _guard(TurnPlan(
@@ -271,6 +289,18 @@ def plan_turn(
         speaker.id, speaker.name, "回应", "elaborate", "假设",
         reason="补充已有观点",
     ), session, candidates)
+
+
+def enforce_fairness(plan: TurnPlan, session: DiscussionSession,
+                     candidates: Sequence[Role]) -> TurnPlan:
+    """Apply the floor-sharing caps to a plan from any source.
+
+    The model-driven orchestrator chooses its own speaker and used to bypass these
+    caps entirely, so the duel-prevention rules only ever protected the fallback
+    path.  Measured before this existed: an orchestrator that always asked for the
+    same role produced six straight turns for that role.
+    """
+    return _guard(plan, session, candidates)
 
 
 def _guard(plan: TurnPlan, session: DiscussionSession, candidates: Sequence[Role],

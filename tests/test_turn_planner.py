@@ -1,7 +1,23 @@
 import unittest
 
-from brainstorm.models import DiscussionSession, DiscussionState, Role, StanceChange, Utterance, ViewpointKind
-from brainstorm.turn_planner import TurnPlan, detect_intervention, mark_duplicates, plan_turn
+from brainstorm.models import (
+    USER_INTERJECTION_WINDOW,
+    DiscussionSession,
+    DiscussionState,
+    Role,
+    StanceChange,
+    Utterance,
+    ViewpointKind,
+)
+from brainstorm.turn_planner import (
+    MODERATOR_COOLDOWN_TURNS,
+    USER_WINDOW,
+    TurnPlan,
+    detect_intervention,
+    mark_duplicates,
+    moderator_available,
+    plan_turn,
+)
 
 
 ROLES = [
@@ -264,6 +280,104 @@ class InterventionTests(unittest.TestCase):
         self.assertEqual(plan.speaker_id, "moderator")
         self.assertEqual(plan.phase, "状态整理")
         self.assertEqual(plan.intervention_reason, "发言集中在少数角色，讨论冷场")
+
+
+class PendingInterjectionTests(unittest.TestCase):
+    """The planner expires an interjection after USER_WINDOW utterances, but the
+    prompt kept carrying it forever: measured at turn 10 the planner had stopped
+    prioritising it while state.pending_user_interjection still held the text.
+    Both now read one predicate."""
+
+    def test_live_interjection_is_reported(self):
+        session = build(
+            say("trend", "趋势分析师", "开场观点"),
+            say("user", "用户", "先讨论无障碍体验", intent="user_instruction"),
+        )
+        pending = session.pending_interjection(USER_WINDOW)
+        self.assertIsNotNone(pending)
+        self.assertEqual(pending.content, "先讨论无障碍体验")
+        session.rebuild_state()
+        self.assertEqual(session.discussion_state.pending_user_interjection, "先讨论无障碍体验")
+
+    def test_answered_interjection_stops_being_pending(self):
+        session = build(
+            say("user", "用户", "先讨论无障碍体验", intent="user_instruction"),
+            say("trend", "趋势分析师", "我先回应插话", intent="elaborate", replies_to="event-000000"),
+        )
+        self.assertIsNone(session.pending_interjection(USER_WINDOW))
+        session.rebuild_state()
+        self.assertEqual(session.discussion_state.pending_user_interjection, "")
+
+    def test_interjection_expires_after_the_window(self):
+        utterances = [say("user", "用户", "先讨论无障碍体验", intent="user_instruction")]
+        for index in range(USER_WINDOW):
+            utterances.append(say("trend", "趋势分析师", f"后续{index}"))
+        session = build(*utterances)
+        self.assertIsNone(session.pending_interjection(USER_WINDOW))
+        session.rebuild_state()
+        self.assertEqual(session.discussion_state.pending_user_interjection, "")
+
+    def test_planner_and_state_agree_on_expiry(self):
+        utterances = [say("user", "用户", "先讨论无障碍体验", intent="user_instruction")]
+        for index in range(USER_WINDOW):
+            utterances.append(say("trend", "趋势分析师", f"后续{index}"))
+        session = build(*utterances)
+        plan = plan_turn(session, ROLES, DiscussionState())
+        session.rebuild_state()
+        self.assertNotEqual(plan.reason, "你刚才插话，优先回应")
+        self.assertEqual(session.discussion_state.pending_user_interjection, "")
+
+
+class ModeratorCooldownTests(unittest.TestCase):
+    """The host's own turn is invisible to every trigger, so without a cooldown the
+    same trigger fires again on the next click and the nine roles never get the
+    floor back.  Measured before this test existed: three consecutive plan_turn
+    calls returned moderator while the trigger stayed true."""
+
+    def stalled(self):
+        return build(
+            say("trend", "趋势分析师", "一"),
+            say("builder", "创业实践者", "二"),
+            say("trend", "趋势分析师", "三"),
+            say("builder", "创业实践者", "四"),
+            say("trend", "趋势分析师", "五"),
+            say("builder", "创业实践者", "六"),
+        )
+
+    def host_turn(self):
+        return Utterance("moderator", "主持人", "本阶段整理", ViewpointKind.SUMMARY, "状态整理",
+                         origin="model", intent="synthesize")
+
+    def test_host_is_not_scheduled_twice_in_a_row(self):
+        session = self.stalled()
+        session.append_utterance(self.host_turn())
+        self.assertFalse(moderator_available(session))
+        plan = plan_turn(session, ROLES, DiscussionState())
+        self.assertFalse(plan.moderator, "主持人整理完不能马上再整理一次")
+        self.assertNotEqual(plan.speaker_id, "moderator")
+        self.assertNotEqual(plan.reason, "发言集中在少数角色，讨论冷场")
+
+    def test_trigger_still_reported_as_evidence_while_the_cooldown_holds(self):
+        """The controller reads detect_intervention for the UI reason, so the
+        evidence function must keep reporting what it sees."""
+        session = self.stalled()
+        session.append_utterance(self.host_turn())
+        triggered, reason = detect_intervention(session)
+        self.assertTrue(triggered)
+        self.assertEqual(reason, "发言集中在少数角色，讨论冷场")
+
+    def test_host_returns_after_the_cooldown(self):
+        session = self.stalled()
+        session.append_utterance(self.host_turn())
+        for index in range(MODERATOR_COOLDOWN_TURNS):
+            speaker_id = "trend" if index % 2 == 0 else "builder"
+            session.append_utterance(say(speaker_id, speaker_id, f"继续{index}"))
+        self.assertTrue(moderator_available(session))
+        plan = plan_turn(session, ROLES, DiscussionState())
+        self.assertTrue(plan.moderator)
+
+    def test_host_available_when_it_never_spoke(self):
+        self.assertTrue(moderator_available(self.stalled()))
 
 
 if __name__ == "__main__":
