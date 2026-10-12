@@ -39,6 +39,7 @@ class _GenerationWorker(QObject):
     finished = Signal(object, int)
     failed = Signal(object, int)
     partial = Signal(str, str)
+    turn_ready = Signal(object, int, int, int)
 
     def __init__(self, provider: DiscussionProvider, topic: str, roles: list[Role], source_note: str, token: int, sources: list[TrendSource] | None = None) -> None:
         super().__init__()
@@ -67,6 +68,13 @@ class _GenerationWorker(QObject):
                 kwargs["on_partial"] = lambda speaker, text: self.partial.emit(str(speaker), str(text))
             if "sources" in parameters:
                 kwargs["sources"] = list(self.sources)
+            if "on_turn" in parameters:
+                # The opening batch is many sequential requests. Handing each
+                # finished turn straight to the GUI thread lets the roundtable
+                # appear after the first one instead of after all of them.
+                kwargs["on_turn"] = lambda utterance, done, total: self.turn_ready.emit(
+                    utterance, int(done), int(total), self.token
+                )
             result = self.provider.discuss(self.topic, self.roles, self.source_note, **kwargs)
             if self.cancel_event.is_set():
                 raise GenerationCancelled()
@@ -124,6 +132,7 @@ class SessionController(QObject):
     generation_started = Signal()
     generation_state_changed = Signal(str)
     generation_partial = Signal(str, str)
+    generation_progress = Signal(int, int)
     discussion_state_changed = Signal(object)
     phase_changed = Signal(str)
 
@@ -145,6 +154,9 @@ class SessionController(QObject):
         self._start_token = 0
         self._generation_thread: QThread | None = None
         self._generation_worker: _GenerationWorker | None = None
+        # Set while the opening batch is still streaming turns in. Owned by the
+        # GUI thread: the worker sends finished turns over, it never touches this.
+        self._live_session: DiscussionSession | None = None
         self._generation_news_result: NewsFetchResult | None = None
         self._generation_topic = ""
         self._generation_roles: list[Role] = []
@@ -163,6 +175,7 @@ class SessionController(QObject):
         token = self._start_token
         self.timer.stop()
         self._pending_start = None
+        self._live_session = None
         self.cancel_generation(emit_state=False, invalidate_token=False)
         # A continuation worker belongs to the previous live session. Its
         # token must be invalidated even when the initial generation worker is
@@ -197,11 +210,13 @@ class SessionController(QObject):
         self._generation_topic = topic
         self._generation_roles = list(roles)
         self._generation_source_note = source_note
+        self._live_session = self._new_live_session(topic, roles, source_note, news_result)
         self._generation_worker.moveToThread(self._generation_thread)
         self._generation_thread.started.connect(self._generation_worker.run)
         self._generation_worker.finished.connect(self._generation_finished)
         self._generation_worker.failed.connect(self._generation_failed)
         self._generation_worker.partial.connect(lambda speaker, text, worker_token=token: self._emit_generation_partial(worker_token, speaker, text))
+        self._generation_worker.turn_ready.connect(self._generation_turn)
         self._generation_worker.finished.connect(self._generation_thread.quit)
         self._generation_worker.failed.connect(self._generation_thread.quit)
         worker = self._generation_worker
@@ -213,14 +228,83 @@ class SessionController(QObject):
         thread.finished.connect(thread.deleteLater)
         thread.start()
 
+    def _new_live_session(self, topic: str, roles: list[Role], source_note: str,
+                          news_result: NewsFetchResult | None) -> DiscussionSession | None:
+        """The session the GUI shows while the opening batch is still arriving.
+
+        Only created when the provider can report turns as they finish; otherwise
+        the old behaviour (show everything once, at the end) is kept.
+        """
+        try:
+            parameters = inspect.signature(self.provider.discuss).parameters
+        except (TypeError, ValueError):
+            parameters = {}
+        if "on_turn" not in parameters:
+            return None
+        sources = list(news_result.sources) if news_result else []
+        if source_note.strip():
+            sources.insert(0, TrendSource("用户提供的前沿线索", note=source_note.strip(), source_type="user"))
+        return DiscussionSession(
+            topic=topic.strip(),
+            sources=sources,
+            source=sources[0] if sources else None,
+            selected_role_ids=[role.id for role in roles],
+        )
+
+    def _generation_turn(self, utterance: Utterance, done: int, total: int, token: int) -> None:
+        """Receive one finished turn from the worker and put it on screen."""
+        if token != self._start_token:
+            return
+        live = self._live_session
+        if live is None:
+            return
+        live.append_utterance(utterance)
+        first = len(live.utterances) == 1
+        if first:
+            self.playback.live = True
+            self.playback.start(live)
+            self.session_ready.emit(live)
+            self.phase_changed.emit(live.phase)
+        self.discussion_state_changed.emit(live.discussion_state)
+        self.generation_progress.emit(done, total)
+        self.store.save(live)
+        # Never advance on the user's behalf: a turn arriving in the background is
+        # preparation, not playback. The reader moves when they click 下一步.
+        if first:
+            self._emit_current()
+
+    @staticmethod
+    def _adopt_metadata(live: DiscussionSession, finished: DiscussionSession) -> None:
+        """Copy the fields the provider only fills in once the whole batch is done."""
+        live.opportunity = finished.opportunity
+        live.usage_input_tokens = finished.usage_input_tokens
+        live.usage_output_tokens = finished.usage_output_tokens
+        live.usage_requests = finished.usage_requests
+        live.model_name = finished.model_name
+        live.generation_status = finished.generation_status
+        live.generation_stage = finished.generation_stage
+        live.generation_streamed = finished.generation_streamed
+        if finished.sources:
+            live.sources = list(finished.sources)
+            live.source = finished.source or live.source
+        live.rebuild_state()
+
     def _generation_finished(self, session: DiscussionSession, token: int) -> None:
         if token != self._start_token:
+            return
+        live = self._live_session
+        self._live_session = None
+        if live is not None:
+            self._adopt_metadata(live, session)
+            self._generation_state(live, self._generation_news_result, provider_failed=False,
+                                   already_started=True)
             return
         self._generation_state(session, self._generation_news_result, provider_failed=False)
 
     def _generation_failed(self, exc: BaseException, token: int) -> None:
         if token != self._start_token:
             return
+        self._live_session = None
         if isinstance(exc, GenerationCancelled) or (isinstance(exc, ProviderFailure) and exc.code == "cancelled"):
             self.generation_state_changed.emit("cancelled")
             return
@@ -247,7 +331,8 @@ class SessionController(QObject):
         session.generation_status = "fallback"
         self._generation_state(session, self._generation_news_result, provider_failed=True)
 
-    def _generation_state(self, session: DiscussionSession, news_result: NewsFetchResult | None, *, provider_failed: bool) -> None:
+    def _generation_state(self, session: DiscussionSession, news_result: NewsFetchResult | None, *,
+                          provider_failed: bool, already_started: bool = False) -> None:
         if news_result and news_result.sources:
             existing = {(item.title.casefold(), item.url.casefold()) for item in session.sources}
             session.sources.extend(item for item in news_result.sources if (item.title.casefold(), item.url.casefold()) not in existing)
@@ -271,11 +356,17 @@ class SessionController(QObject):
             session.fallback_reason = news_result.message
         self._discussion_batch = 0
         self.playback.live = True
-        self.playback.start(session)
-        self.session_ready.emit(session)
-        self.discussion_state_changed.emit(session.discussion_state)
-        self.phase_changed.emit(session.phase)
-        self._emit_current()
+        if already_started:
+            # The batch streamed in and the reader is already somewhere inside it:
+            # keep their position, only refresh the surrounding state.
+            self.discussion_state_changed.emit(session.discussion_state)
+            self.phase_changed.emit(session.phase)
+        else:
+            self.playback.start(session)
+            self.session_ready.emit(session)
+            self.discussion_state_changed.emit(session.discussion_state)
+            self.phase_changed.emit(session.phase)
+            self._emit_current()
         if news_result is not None:
             self.news_finished.emit(news_result)
         self.generation_state_changed.emit("completed" if not provider_failed else "fallback")
@@ -387,6 +478,7 @@ class SessionController(QObject):
     def load(self, session: DiscussionSession, *, replay: bool = False) -> None:
         self._start_token += 1
         self._pending_start = None
+        self._live_session = None
         self.cancel_generation(emit_state=False)
         self._cancel_batch(emit_state=False)
         self._cancel_news_worker()
@@ -398,6 +490,12 @@ class SessionController(QObject):
         if self.playback.state in (PlaybackState.PLAYING, PlaybackState.PAUSED):
             self.timer.stop()
             if self.playback.live and self.playback.current is not None and self.playback.index >= len(self.playback.session.utterances) - 1:
+                if self._live_session is not None:
+                    # The opening batch is still streaming in, so the next turn is
+                    # already on its way. Queueing a continuation here would ask
+                    # the model for a turn the batch is about to deliver anyway.
+                    self.generation_state_changed.emit("running")
+                    return
                 self.extend_discussion()
             else:
                 was_paused = self.playback.state == PlaybackState.PAUSED

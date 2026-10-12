@@ -351,6 +351,7 @@ class RoundtablePage(QWidget):
         self._build()
         controller.session_ready.connect(self._session_ready)
         controller.utterance_changed.connect(self._utterance)
+        controller.generation_progress.connect(self._generation_progress)
         controller.playback_state_changed.connect(self._state)
         controller.completed.connect(self._completed)
         controller.error.connect(self._error)
@@ -589,6 +590,14 @@ class RoundtablePage(QWidget):
             self.phase_label.setText("已回退到离线模拟")
         elif state == "error":
             self.phase_label.setText("生成失败")
+
+    def _generation_progress(self, done: int, total: int) -> None:
+        """Show how much of the opening batch is already prepared.
+
+        The first turn is on screen by now, so this is background progress rather
+        than a blocking wait; it must not disturb the turn counter or the bubble.
+        """
+        self.phase_label.setText(f"正在后台准备后续发言…（{done}/{total} 条已就绪）")
 
     def _generation_partial(self, speaker: str, text: str) -> None:
         if text:

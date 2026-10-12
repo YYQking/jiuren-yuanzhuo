@@ -140,6 +140,7 @@ class AnthropicDiscussionProvider:
         sources: Sequence[TrendSource] = (),
         on_partial: Callable[[str, str], None] | None = None,
         cancel_event: threading.Event | None = None,
+        on_turn: Callable[[Utterance, int, int], None] | None = None,
     ) -> Any:
         """Compatibility entry point returning a fully generated session."""
         from .models import DiscussionSession
@@ -155,16 +156,22 @@ class AnthropicDiscussionProvider:
             source_items.insert(0, TrendSource("用户提供的前沿线索", note=source_note.strip(), source_type="user"))
         session = DiscussionSession(topic=topic.strip(), sources=source_items, source=source_items[0] if source_items else None, selected_role_ids=[r.id for r in selected])
         history: list[Utterance] = []
-        for spec in self.plan(selected):
+        plans = self.plan(selected)
+        for index, spec in enumerate(plans, start=1):
             result = self.generate_turn(
                 topic, selected, source_items, history, spec,
                 on_partial=(lambda text, name=spec.speaker_name: on_partial(name, text)) if on_partial else None,
                 cancel_event=cancel_event,
             )
             history.append(result.utterance)
-            session.append_utterance(result.utterance)
+            appended = session.append_utterance(result.utterance)
             if result.opportunity is not None:
                 session.opportunity = result.opportunity
+            if on_turn is not None:
+                # Hand the finished turn over immediately. The opening batch is
+                # many sequential requests, so the UI can show the first one long
+                # before the last one exists.
+                on_turn(appended, index, len(plans))
         session.provider_mode = "llm"
         session.effective_provider = self.provider_name
         session.request_mode = "llm"

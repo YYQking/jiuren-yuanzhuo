@@ -8,7 +8,7 @@ try:
     from PySide6.QtWidgets import QApplication as QCoreApplication
     from brainstorm.engine import MockDiscussionProvider
     from brainstorm.llm import ProviderFailure
-    from brainstorm.models import DiscussionSession, Role, TrendSource, Utterance, ViewpointKind
+    from brainstorm.models import DiscussionSession, OpportunityCard, Role, TrendSource, Utterance, ViewpointKind
     from brainstorm.news import NewsFetchResult
     from brainstorm.providers import IntegrationStatus
     from brainstorm.session_controller import SessionController
@@ -97,6 +97,39 @@ def process_until(predicate, timeout=1500):
     APP.processEvents()
 
 
+class ProgressiveProvider:
+    """Emits turns one at a time, the way the real model path does.
+
+    The opening batch is 14 sequential requests, so waiting for all of them means
+    staring at a status label for most of a minute.  This fake lets the tests
+    check that the first turn reaches the screen long before the batch is done.
+    """
+
+    provider_name = "progressive-test"
+
+    def __init__(self, turns: int = 4, delay: float = 0.06) -> None:
+        self.turns = turns
+        self.delay = delay
+        self.finished = False
+
+    def discuss(self, topic, roles, source_note="", *, sources=(), on_partial=None,
+                cancel_event=None, on_turn=None):
+        session = DiscussionSession(topic=topic, selected_role_ids=[role.id for role in roles])
+        for index in range(self.turns):
+            time.sleep(self.delay)
+            utterance = Utterance("trend", "趋势分析师", f"第{index + 1}条观点",
+                                  ViewpointKind.ASSUMPTION, "独立观点", origin="model")
+            session.append_utterance(utterance)
+            if on_turn is not None:
+                on_turn(utterance, index + 1, self.turns)
+        session.opportunity = OpportunityCard("测试机会", "测试用户")
+        session.provider_mode = "llm"
+        session.effective_provider = self.provider_name
+        session.model_name = "progressive-model"
+        self.finished = True
+        return session
+
+
 @unittest.skipIf(QCoreApplication is None, f"PySide6 unavailable: {_IMPORT_ERROR}")
 class GenerationControllerTests(unittest.TestCase):
     def setUp(self):
@@ -166,6 +199,68 @@ class GenerationControllerTests(unittest.TestCase):
         controller._apply_batch([Utterance("trend", "趋势分析师", "先 做 小范围 试点", ViewpointKind.ASSUMPTION, "动态交锋", origin="model")])
         self.assertTrue(session.utterances[-1].duplicate)
         self.assertEqual(len(session.utterances), 2)
+
+    def test_first_turn_is_shown_before_the_batch_finishes(self):
+        provider = ProgressiveProvider(turns=6, delay=0.08)
+        controller = self.track(SessionController(provider=provider, store=SessionStore(self._history_tmp)))
+        ready = []
+        controller.session_ready.connect(ready.append)
+        controller.start("测试主题", [ROLE])
+        process_until(lambda: bool(ready))
+        self.assertFalse(provider.finished, "首批还没生成完，界面就该已经显示第一条")
+        self.assertIsNotNone(controller.playback.current)
+        self.assertEqual(controller.playback.current.content, "第1条观点")
+
+    def test_background_turns_never_advance_the_reader(self):
+        provider = ProgressiveProvider(turns=5, delay=0.06)
+        controller = self.track(SessionController(provider=provider, store=SessionStore(self._history_tmp)))
+        states = []
+        controller.generation_state_changed.connect(states.append)
+        controller.start("测试主题", [ROLE])
+        process_until(lambda: controller.playback.current is not None)
+        first = controller.playback.current.content
+        process_until(lambda: provider.finished and "completed" in states)
+        self.assertEqual(controller.playback.current.content, first,
+                         "用户没点下一步，后台到货不能自动翻页")
+
+    def test_new_turns_are_available_without_another_request(self):
+        provider = ProgressiveProvider(turns=4, delay=0.05)
+        controller = self.track(SessionController(provider=provider, store=SessionStore(self._history_tmp)))
+        controller.start("测试主题", [ROLE])
+        process_until(lambda: controller.playback.current is not None)
+        process_until(lambda: len(controller.session.utterances) >= 4)
+        controller.next_step()
+        self.assertEqual(controller.playback.current.content, "第2条观点")
+
+    def test_finished_metadata_lands_on_the_displayed_session(self):
+        provider = ProgressiveProvider(turns=3, delay=0.03)
+        controller = self.track(SessionController(
+            provider=provider,
+            store=SessionStore(self._history_tmp),
+            integration_status=IntegrationStatus(discussion_provider="progressive-test", effective_mode="llm"),
+        ))
+        states = []
+        controller.generation_state_changed.connect(states.append)
+        controller.start("测试主题", [ROLE])
+        process_until(lambda: "completed" in states)
+        session = controller.session
+        self.assertEqual(len(session.utterances), 3)
+        self.assertIsNotNone(session.opportunity)
+        self.assertEqual(session.opportunity.title, "测试机会")
+        self.assertEqual(session.effective_provider, "progressive-test")
+        self.assertEqual(session.model_name, "progressive-model")
+
+    def test_generation_reports_progress(self):
+        provider = ProgressiveProvider(turns=4, delay=0.03)
+        controller = self.track(SessionController(provider=provider, store=SessionStore(self._history_tmp)))
+        progress = []
+        controller.generation_progress.connect(lambda done, total: progress.append((done, total)))
+        states = []
+        controller.generation_state_changed.connect(states.append)
+        controller.start("测试主题", [ROLE])
+        process_until(lambda: "completed" in states)
+        self.assertEqual([done for done, _ in progress], [1, 2, 3, 4])
+        self.assertEqual(progress[-1], (4, 4))
 
     def test_cancel_sets_provider_cancel_event(self):
         provider = SlowProvider()
