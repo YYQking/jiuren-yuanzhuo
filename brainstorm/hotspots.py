@@ -51,6 +51,7 @@ class HotspotItem:
     related: bool = False
     cached: bool = False
     time_note: str = ""
+    source_kind: str = "rss"
 
 
 @dataclass(frozen=True)
@@ -404,6 +405,7 @@ def _item_from_dict(data: dict[str, object]) -> HotspotItem:
         related=bool(values.get("related", False)),
         cached=bool(values.get("cached", False)),
         time_note=str(values.get("time_note", "")),
+        source_kind=str(values.get("source_kind", "rss")),
     )
 
 

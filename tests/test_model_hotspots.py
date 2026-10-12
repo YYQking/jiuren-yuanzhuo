@@ -5,8 +5,8 @@ import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 
-from brainstorm.hotspots import HotspotCache
-from brainstorm.model_hotspots import ModelHotspotProvider, build_hotspot_prompt
+from brainstorm.hotspots import HotspotCache, HotspotFetchResult, HotspotItem
+from brainstorm.model_hotspots import HybridHotspotProvider, ModelHotspotProvider, build_hotspot_prompt
 
 
 def payload(items):
@@ -164,6 +164,88 @@ def entry_to_item():
     from brainstorm.hotspots import HotspotItem
 
     return HotspotItem(title="缓存里的旧热点", publisher="模型生成", region="domestic")
+
+
+class FakeFeeds:
+    """Stands in for the RSS/feed provider the hybrid treats as primary."""
+
+    def __init__(self, by_topic):
+        self.by_topic = by_topic
+        self.topics = []
+
+    def fetch(self, topic="", *, cancel_event=None):
+        self.topics.append(topic)
+        items = self.by_topic.get(topic, [])
+        return HotspotFetchResult(items, attempted=True, success=True, message="feeds ok")
+
+    def cached(self, topic="", message="已加载缓存"):
+        items = self._cache.get(topic, []) if hasattr(self, "_cache") else []
+        return HotspotFetchResult(items, used_cache=bool(items), message="缓存" if items else "暂无缓存热点")
+
+    def with_cache(self, by_topic):
+        self._cache = by_topic
+        return self
+
+
+def real_item(title):
+    return HotspotItem(title=title, publisher="中新网", region="domestic", category="社会")
+
+
+class HybridHotspotProviderTests(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.model_cache = HotspotCache(Path(self._tmp.name) / "model.json")
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def model_provider(self, reply):
+        def complete(prompt, cancel_event=None):
+            return reply
+        return ModelHotspotProvider(complete, cache=self.model_cache, rng=random.Random(0))
+
+    def test_real_news_comes_first_and_both_kinds_are_tagged(self):
+        feeds = FakeFeeds({"社区养老": [real_item("真实新闻一"), real_item("真实新闻二")]})
+        hybrid = HybridHotspotProvider(feeds, self.model_provider(payload([entry("模型回忆一")])))
+        result = hybrid.fetch("社区养老")
+        self.assertEqual([item.source_kind for item in result.items], ["rss", "rss", "model"])
+        self.assertEqual([item.title for item in result.items][:2], ["真实新闻一", "真实新闻二"])
+        self.assertIn("真实新闻 2 条", result.message)
+        self.assertIn("AI 回忆 1 条", result.message)
+
+    def test_narrow_topic_falls_back_to_current_general_headlines(self):
+        feeds = FakeFeeds({"": [real_item("当前一般头条")]})
+        hybrid = HybridHotspotProvider(feeds, self.model_provider(payload([entry("模型回忆一")])))
+        result = hybrid.fetch("社区养老")
+        self.assertEqual(feeds.topics, ["社区养老", ""])
+        self.assertIn("当前一般头条", [item.title for item in result.items])
+        self.assertIn("当前一般热点", result.message)
+
+    def test_each_kind_respects_its_quota(self):
+        feeds = FakeFeeds({"": [real_item(f"新闻{index}") for index in range(20)]})
+        model = self.model_provider(payload([entry(f"回忆{index}") for index in range(20)]))
+        hybrid = HybridHotspotProvider(feeds, model, feed_quota=3, model_quota=2)
+        result = hybrid.fetch("")
+        self.assertEqual(len([i for i in result.items if i.source_kind == "rss"]), 3)
+        self.assertEqual(len([i for i in result.items if i.source_kind == "model"]), 2)
+
+    def test_cached_tags_each_kind_from_its_own_source(self):
+        feeds = FakeFeeds({}).with_cache({"": [real_item("缓存新闻")]})
+        hybrid = HybridHotspotProvider(feeds, self.model_provider(payload([entry("模型回忆一")])))
+        hybrid.fetch("")  # fill the model cache
+        cached = hybrid.cached("")
+        kinds = {item.title: item.source_kind for item in cached.items}
+        self.assertEqual(kinds["缓存新闻"], "rss")
+        self.assertEqual(kinds["模型回忆一"], "model")
+
+    def test_model_provider_exposes_cached_for_the_page(self):
+        provider = self.model_provider(payload([entry("模型回忆一")]))
+        empty = provider.cached("")
+        self.assertFalse(empty.items)
+        provider.fetch("")
+        loaded = provider.cached("")
+        self.assertEqual(len(loaded.items), 1)
+        self.assertIn("未核验", loaded.message)
 
 
 if __name__ == "__main__":

@@ -39,7 +39,7 @@ from .config import AppConfig
 from .models import DiscussionSession, Role, Utterance, ViewpointKind
 from .hotspot_page import HotspotPage
 from .hotspots import HotspotCache, HotspotProvider, default_hotspot_feeds
-from .model_hotspots import ModelHotspotProvider
+from .model_hotspots import HybridHotspotProvider, ModelHotspotProvider
 from .providers import resolve_providers
 from .qt_theme import COLORS, app_stylesheet, title_font
 from .roles import DEFAULT_ROLES
@@ -869,21 +869,27 @@ class MainWindow(QMainWindow):
         provider, news_provider, integration_status = resolve_providers(self.config)
         self.controller = SessionController(provider=provider, news_provider=news_provider, integration_status=integration_status, store=self.store)
         self.audio = AudioController()
-        hotspot_cache = HotspotCache()
+        feeds_cache = HotspotCache()
+        # The feed and model providers must not share one cache file: each save
+        # rewrites the whole file, so sharing would make them overwrite each other.
+        model_cache = HotspotCache(feeds_cache.path.with_name("hotspots-model.json"))
         hotspot_network_allowed = self.config.allow_network and self.config.news_enabled and self.config.mode != "offline"
+        feeds_provider = HotspotProvider(
+            default_hotspot_feeds(self.config.news_feed_urls),
+            timeout=self.config.timeout_seconds,
+            max_items=max(12, self.config.max_news_items * 4),
+            cache=feeds_cache,
+        )
         if integration_status.discussion_provider in {"anthropic", "openai-compatible"}:
-            # Public feeds are unreachable from here or return nothing for most
-            # topics, so the radar asks the already-configured model for a pool
-            # of current hotspots and shows a random ten of them. Every item is
-            # labelled as unverified model output.
-            hotspot_provider = ModelHotspotProvider(provider.complete, cache=hotspot_cache)
-        else:
-            hotspot_provider = HotspotProvider(
-                default_hotspot_feeds(self.config.news_feed_urls),
-                timeout=self.config.timeout_seconds,
-                max_items=max(12, self.config.max_news_items * 4),
-                cache=hotspot_cache,
+            # Real headlines first (they carry a real outlet and a real
+            # publication time); the model only ever adds a clearly separated,
+            # clearly labelled supplement, because it cannot see current events.
+            hotspot_provider = HybridHotspotProvider(
+                feeds=feeds_provider,
+                model=ModelHotspotProvider(provider.complete, cache=model_cache),
             )
+        else:
+            hotspot_provider = feeds_provider
         self.stack = QStackedWidget()
         self.lobby = LobbyPage(self.store)
         self.roundtable = RoundtablePage(self.controller, self.audio)

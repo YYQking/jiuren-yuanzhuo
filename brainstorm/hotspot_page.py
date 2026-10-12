@@ -46,7 +46,8 @@ class HotspotCard(QFrame):
         tag = _plain_label(f"{region}  ·  {item.category}")
         tag.setStyleSheet(f"color: {COLORS['gold']}; font-size: 12px;")
         tags.addWidget(tag, 1)
-        trust = QLabel("缓存 · 未核验" if item.cached else "未核验")
+        kind = "AI 回忆" if item.source_kind == "model" else "真实新闻源"
+        trust = QLabel(f"{kind} · " + ("缓存 · 未核验" if item.cached else "未核验"))
         trust.setStyleSheet(f"color: {COLORS['muted']}; font-size: 11px;")
         tags.addWidget(trust)
         layout.addLayout(tags)

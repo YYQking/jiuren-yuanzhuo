@@ -16,7 +16,7 @@ Two honesty rules are enforced here rather than left to the caller:
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from threading import Event
 from typing import Callable
@@ -93,6 +93,7 @@ def parse_hotspot_items(text: str, fetched_at: datetime, topic: str) -> list[Hot
             credibility=MODEL_CREDIBILITY,
             related=bool(entry.get("related")) and asked,
             time_note=f"时间：{when_text} · 来源：{source_text}（均为模型自述，未核验）",
+            source_kind="model",
         ))
     return items
 
@@ -112,6 +113,17 @@ class ModelHotspotProvider:
         self.pool_size = max(self.max_items, int(self.pool_size))
         self.cache = self.cache or HotspotCache()
         self.rng = self.rng or random.Random()
+
+    def cached(self, topic: str = "", message: str = "已加载缓存") -> HotspotFetchResult:
+        """Same shape as the feed provider's ``cached`` so the page can swap them."""
+        items, stamp = self.cache.load(topic=topic)
+        if not items:
+            return HotspotFetchResult([], used_cache=False, message="暂无缓存热点")
+        return HotspotFetchResult(
+            items, used_cache=True,
+            message=f"{message}（{UNVERIFIED_NOTE}）",
+            last_success_at=stamp,
+        )
 
     def fetch(self, topic: str = "", *, cancel_event: Event | None = None) -> HotspotFetchResult:
         topic = (topic or "").strip()
@@ -156,3 +168,79 @@ class ModelHotspotProvider:
             message=f"{UNVERIFIED_NOTE}（本条为 {len(picked)} 条）",
             fetched_at=fetched_at, last_success_at=fetched_at,
         )
+
+
+@dataclass
+class HybridHotspotProvider:
+    """Real current headlines first, model-recalled topics as a labelled extra.
+
+    The public feeds win whenever they answer, because they carry a real outlet
+    and a real publication time.  The model cannot see current events at all --
+    measured output was consistently about two years old -- so its items are
+    never mixed in silently: they are appended separately and every one of them
+    carries ``source_kind == "model"`` plus the model's own claimed time.
+    """
+
+    feeds: object
+    model: object
+    feed_quota: int = 6
+    model_quota: int = 6
+
+    def cached(self, topic: str = "", message: str = "已加载缓存") -> HotspotFetchResult:
+        feed_result = self.feeds.cached(topic, message)
+        model_result = self.model.cached(topic, message)
+        items = self._tag(feed_result.items, "rss") + self._tag(model_result.items, "model")
+        stamp = feed_result.last_success_at or model_result.last_success_at
+        if not items:
+            return HotspotFetchResult([], used_cache=False, message="暂无缓存热点")
+        return HotspotFetchResult(
+            items, used_cache=True,
+            message="已加载缓存：真实新闻与 AI 回忆分别标注，均未核验",
+            last_success_at=stamp,
+        )
+
+    def fetch(self, topic: str = "", *, cancel_event: Event | None = None) -> HotspotFetchResult:
+        topic = (topic or "").strip()
+        cancelled = cancel_event or Event()
+        if cancelled.is_set():
+            return HotspotFetchResult([], success=False, message="刷新已取消")
+        notes: list[str] = []
+
+        real = self.feeds.fetch(topic, cancel_event=cancelled)
+        if topic and not real.items and real.success:
+            # A narrow topic commonly matches nothing in today's headlines;
+            # giving current general hotspots beats showing an empty page.
+            real = self.feeds.fetch("", cancel_event=cancelled)
+            notes.append("没有与主题直接相关的新闻，已改为当前一般热点")
+        real_items = self._tag(real.items[: self.feed_quota], "rss")
+
+        recalled = self.model.fetch(topic, cancel_event=cancelled)
+        if cancelled.is_set():
+            return HotspotFetchResult([], attempted=True, success=False, message="刷新已取消")
+        model_items = self._tag(recalled.items[: self.model_quota], "model")
+
+        if not real.success and not real_items:
+            notes.append(real.message)
+        if not recalled.success and not model_items:
+            notes.append(recalled.message)
+        if recalled.used_cache and model_items:
+            notes.append("AI 补充来自缓存")
+
+        items = real_items + model_items
+        fetched_at = datetime.now(timezone.utc)
+        if not items:
+            return HotspotFetchResult([], attempted=True, success=False,
+                                      message="；".join(notes) or "没有可显示的热点",
+                                      fetched_at=fetched_at)
+        headline = (f"真实新闻 {len(real_items)} 条（未核验）；"
+                    f"AI 回忆 {len(model_items)} 条（时间与来源为模型自述，可能过时）")
+        return HotspotFetchResult(
+            items, attempted=True, success=real.success or recalled.success,
+            message="；".join([headline] + notes),
+            fetched_at=fetched_at,
+            last_success_at=(real.last_success_at or recalled.last_success_at or fetched_at),
+        )
+
+    @staticmethod
+    def _tag(items, kind: str) -> list[HotspotItem]:
+        return [replace(item, source_kind=kind) for item in items]

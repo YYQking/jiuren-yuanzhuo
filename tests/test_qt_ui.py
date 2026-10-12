@@ -114,6 +114,30 @@ class QtUiTests(unittest.TestCase):
         labels = {button.text() for button in page.general_section.findChildren(QPushButton)}
         self.assertIn("打开原文 ↗", labels)
 
+    def test_hotspot_page_labels_real_news_and_ai_recall_separately(self):
+        from datetime import datetime, timezone
+        from brainstorm.hotspots import HotspotFetchResult, HotspotItem
+        from brainstorm.qt_app import HotspotPage
+
+        page = HotspotPage(network_allowed=False)
+        page.set_result(HotspotFetchResult([
+            HotspotItem("真实新闻标题", publisher="中新网", region="domestic", category="社会",
+                        source_kind="rss", published_at=datetime(2026, 10, 12, tzinfo=timezone.utc)),
+            HotspotItem("模型回忆标题", publisher="模型生成", region="international", category="社会",
+                        source_kind="model",
+                        time_note="时间：2024年8月 · 来源：路透社（均为模型自述，未核验）"),
+        ], message="真实新闻 1 条（未核验）；AI 回忆 1 条（时间与来源为模型自述，可能过时）"))
+
+        text = "\n".join(label.text() for label in page.general_section.findChildren(type(page.status_label)))
+        self.assertIn("真实新闻标题", text)
+        self.assertIn("模型回忆标题", text)
+        self.assertIn("真实新闻源", text)
+        self.assertIn("AI 回忆", text)
+        # 每条都要能看到时间与来源
+        self.assertIn("2024年8月", text)
+        self.assertIn("路透社", text)
+        self.assertIn("模型自述", page.status_label.text())
+
     def test_offline_hotspot_page_reads_cache_without_fetching(self):
         from brainstorm.hotspots import HotspotCache, HotspotItem, HotspotProvider
         from brainstorm.qt_app import HotspotPage
