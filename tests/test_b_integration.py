@@ -57,6 +57,36 @@ class BIntegrationTests(unittest.TestCase):
         self.assertEqual(session.utterances[0].event_id, "event-000000")
         self.assertEqual(session.utterances[0].sequence, 0)
 
+    def test_incomplete_opportunity_card_does_not_discard_the_turn(self):
+        spec = TurnSpec("moderator", "主持人", "阶段总结", "总结", final=True)
+        payload = '{"content":"总结","kind":"总结","intent":"synthesize","opportunity":{"title":"方向"}}'
+        utterance, opportunity = AnthropicDiscussionProvider._parse(payload, spec, [])
+        self.assertEqual(utterance.content, "总结")
+        self.assertIsNone(opportunity)
+
+    def test_partial_opportunity_card_is_repaired_not_dropped(self):
+        spec = TurnSpec("moderator", "主持人", "阶段总结", "总结", final=True)
+        payload = (
+            '{"content":"总结","kind":"总结","intent":"synthesize","opportunity":'
+            '{"title":"窄场景机会","audience":"高频用户","support":["理由一",123],'
+            '"risks":[],"next_steps":["访谈五人"]}}'
+        )
+        utterance, opportunity = AnthropicDiscussionProvider._parse(payload, spec, [])
+        self.assertEqual(utterance.content, "总结")
+        self.assertIsNotNone(opportunity)
+        self.assertEqual(opportunity.title, "窄场景机会")
+        self.assertEqual(opportunity.audience, "高频用户")
+        self.assertEqual(opportunity.support, ["理由一"])
+        self.assertEqual(opportunity.assumptions, [])
+        self.assertEqual(opportunity.next_steps, ["访谈五人"])
+
+    def test_missing_opportunity_card_is_not_an_error(self):
+        spec = TurnSpec("moderator", "主持人", "阶段总结", "总结", final=True)
+        payload = '{"content":"总结","kind":"总结","intent":"synthesize"}'
+        utterance, opportunity = AnthropicDiscussionProvider._parse(payload, spec, [])
+        self.assertEqual(utterance.content, "总结")
+        self.assertIsNone(opportunity)
+
     def test_anthropic_parse_preserves_discussion_metadata(self):
         spec = TurnSpec("r", "角色", "动态交锋")
         prior = [Utterance("other", "另一角色", "原始观点", ViewpointKind.OPPORTUNITY, "首轮观点", event_id="event-000001", sequence=1)]

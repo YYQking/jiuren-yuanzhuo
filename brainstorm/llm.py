@@ -405,26 +405,30 @@ class AnthropicDiscussionProvider:
                 )
         opportunity = None
         raw_card = data.get("opportunity")
-        if raw_card is not None:
-            if not isinstance(raw_card, dict):
-                raise ProviderFailure("invalid_schema", "机会档案结构不完整；已回退到离线模拟")
-            values: dict[str, Any] = {}
-            for key in ("title", "audience"):
-                if not isinstance(raw_card.get(key), str) or not raw_card[key].strip():
-                    raise ProviderFailure("invalid_schema", "机会档案字段不完整；已回退到离线模拟")
-                values[key] = raw_card[key][:500]
-            for key in ("support", "risks", "assumptions", "next_steps"):
-                value = raw_card.get(key)
-                if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
-                    raise ProviderFailure("invalid_schema", "机会档案字段不完整；已回退到离线模拟")
-                values[key] = [item[:500] for item in value[:12]]
-            opportunity = OpportunityCard(**values)
+        if isinstance(raw_card, dict):
+            # The card is a nice-to-have. A model that omits or mistypes one
+            # field must never discard the turn or fail the whole discussion,
+            # so a card missing its two identifying fields is dropped and the
+            # list fields are repaired rather than rejected.
+            title = raw_card.get("title")
+            audience = raw_card.get("audience")
+            if isinstance(title, str) and title.strip() and isinstance(audience, str) and audience.strip():
+                values: dict[str, Any] = {"title": title[:500], "audience": audience[:500]}
+                for key in ("support", "risks", "assumptions", "next_steps"):
+                    value = raw_card.get(key)
+                    if not isinstance(value, list):
+                        values[key] = []
+                        continue
+                    values[key] = [item[:500] for item in value if isinstance(item, str)][:12]
+                opportunity = OpportunityCard(**values)
         utterance = Utterance(spec.speaker_id, spec.speaker_name, content.strip(), kind, spec.phase, replies_to, simulated=True, origin="model", intent=intent, verification="unverified", stance_change=stance_change)
         if opportunity:
+            # history arrives as a list; never concatenate a tuple onto it.
+            seen = list(history) + [utterance]
             opportunity.stance_counts = {
-                "支持/机会": sum(item.kind == ViewpointKind.OPPORTUNITY for item in history + (utterance,)),
-                "保留/假设": sum(item.kind in (ViewpointKind.ASSUMPTION, ViewpointKind.VALIDATION) for item in history + (utterance,)),
-                "风险/反对": sum(item.kind == ViewpointKind.RISK for item in history + (utterance,)),
+                "支持/机会": sum(item.kind == ViewpointKind.OPPORTUNITY for item in seen),
+                "保留/假设": sum(item.kind in (ViewpointKind.ASSUMPTION, ViewpointKind.VALIDATION) for item in seen),
+                "风险/反对": sum(item.kind == ViewpointKind.RISK for item in seen),
             }
         return utterance, opportunity
 
