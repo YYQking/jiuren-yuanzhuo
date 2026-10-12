@@ -87,6 +87,76 @@ class BIntegrationTests(unittest.TestCase):
         self.assertEqual(utterance.content, "总结")
         self.assertIsNone(opportunity)
 
+    def test_independent_opinions_are_generated_concurrently(self):
+        import threading
+        import time
+
+        probe = {"active": 0, "max": 0, "calls": 0}
+        lock = threading.Lock()
+
+        class Event:
+            text = '{"content":"观点"}'
+
+        class Stream:
+            def __enter__(self): return self
+            def __exit__(self, *_): return False
+            def __iter__(self): return iter([Event()])
+
+        class Messages:
+            def stream(self, **_):
+                with lock:
+                    probe["active"] += 1
+                    probe["calls"] += 1
+                    probe["max"] = max(probe["max"], probe["active"])
+                time.sleep(0.05)
+                with lock:
+                    probe["active"] -= 1
+                return Stream()
+
+        class Client:
+            messages = Messages()
+
+        provider = AnthropicDiscussionProvider(client=Client(), model="test-model")
+        roles = [Role(f"r{index}", f"角色{index}", "职责", "#fff", "提示") for index in range(9)]
+        session = provider.discuss("主题", roles)
+
+        self.assertEqual(len(session.utterances), 14)
+        self.assertGreaterEqual(probe["max"], 2, "九个独立观点属于同一阶段，应当并发生成")
+        # 并发之后仍然要按名册顺序落盘，不能变成谁先返回谁排前面
+        self.assertEqual([item.speaker_name for item in session.utterances[1:10]], [role.name for role in roles])
+        self.assertEqual(session.utterances[0].speaker_name, "主持人")
+        self.assertEqual(session.utterances[-1].speaker_name, "主持人")
+
+    def test_independent_opinions_do_not_see_each_other(self):
+        prompts = []
+
+        class Event:
+            text = '{"content":"观点"}'
+
+        class Stream:
+            def __enter__(self): return self
+            def __exit__(self, *_): return False
+            def __iter__(self): return iter([Event()])
+
+        class Messages:
+            def stream(self, **kwargs):
+                prompts.append(kwargs["messages"][0]["content"])
+                return Stream()
+
+        class Client:
+            messages = Messages()
+
+        provider = AnthropicDiscussionProvider(client=Client(), model="test-model")
+        roles = [Role(f"r{index}", f"独特角色{index}", "职责", "#fff", "提示") for index in range(3)]
+        provider.discuss("主题", roles)
+        # 前 4 次请求 = 开场 + 三个独立观点；它们之间不应看到彼此的发言
+        independent_prompts = prompts[1:4]
+        for index, prompt in enumerate(independent_prompts):
+            for other in range(3):
+                if other == index:
+                    continue
+                self.assertNotIn(f"独特角色{other}: 观点", prompt)
+
     def test_anthropic_parse_preserves_discussion_metadata(self):
         spec = TurnSpec("r", "角色", "动态交锋")
         prior = [Utterance("other", "另一角色", "原始观点", ViewpointKind.OPPORTUNITY, "首轮观点", event_id="event-000001", sequence=1)]

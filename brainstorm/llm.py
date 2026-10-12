@@ -11,6 +11,7 @@ import urllib.error
 import urllib.request
 import threading
 from collections.abc import Callable, Iterable, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -157,21 +158,53 @@ class AnthropicDiscussionProvider:
         session = DiscussionSession(topic=topic.strip(), sources=source_items, source=source_items[0] if source_items else None, selected_role_ids=[r.id for r in selected])
         history: list[Utterance] = []
         plans = self.plan(selected)
-        for index, spec in enumerate(plans, start=1):
-            result = self.generate_turn(
-                topic, selected, source_items, history, spec,
-                on_partial=(lambda text, name=spec.speaker_name: on_partial(name, text)) if on_partial else None,
-                cancel_event=cancel_event,
-            )
+        opening = plans[:1]
+        # The protocol calls this phase 独立观点: each role gives its own initial
+        # stance. They are genuinely independent, so running them one after
+        # another both wasted most of the wait and let later roles read earlier
+        # ones, which is not what an independent first round means.
+        independent = plans[1:1 + len(selected)]
+        rest = plans[1 + len(selected):]
+
+        def emit(result: TurnResult, spec: TurnSpec, index: int) -> None:
             history.append(result.utterance)
             appended = session.append_utterance(result.utterance)
             if result.opportunity is not None:
                 session.opportunity = result.opportunity
             if on_turn is not None:
-                # Hand the finished turn over immediately. The opening batch is
-                # many sequential requests, so the UI can show the first one long
-                # before the last one exists.
+                # Hand each finished turn over immediately: the UI can show the
+                # opening long before the whole batch exists.
                 on_turn(appended, index, len(plans))
+
+        for spec in opening:
+            emit(self.generate_turn(
+                topic, selected, source_items, history, spec,
+                on_partial=(lambda text, name=spec.speaker_name: on_partial(name, text)) if on_partial else None,
+                cancel_event=cancel_event,
+            ), spec, len(history) + 1)
+
+        if independent:
+            snapshot = list(history)
+            with ThreadPoolExecutor(max_workers=min(4, len(independent))) as pool:
+                futures = [
+                    pool.submit(self._generate_turn_result, topic, selected, source_items, snapshot, spec,
+                                cancel_event=cancel_event)
+                    for spec in independent
+                ]
+                results = [future.result() for future in futures]
+            usage = Usage()
+            for result in results:
+                usage = usage.add(result.usage)
+            self.last_usage = self.last_usage.add(usage)
+            for spec, result in zip(independent, results):
+                emit(result, spec, len(history) + 1)
+
+        for spec in rest:
+            emit(self.generate_turn(
+                topic, selected, source_items, history, spec,
+                on_partial=(lambda text, name=spec.speaker_name: on_partial(name, text)) if on_partial else None,
+                cancel_event=cancel_event,
+            ), spec, len(history) + 1)
         session.provider_mode = "llm"
         session.effective_provider = self.provider_name
         session.request_mode = "llm"
@@ -237,6 +270,32 @@ class AnthropicDiscussionProvider:
         state: DiscussionState | None = None,
         plan: TurnPlan | None = None,
     ) -> TurnResult:
+        result = self._generate_turn_result(
+            topic, roles, sources, history, spec,
+            on_partial=on_partial, cancel_event=cancel_event, state=state, plan=plan,
+        )
+        self.last_usage = self.last_usage.add(result.usage)
+        return result
+
+    def _generate_turn_result(
+        self,
+        topic: str,
+        roles: Sequence[Role],
+        sources: Sequence[TrendSource],
+        history: Sequence[Utterance],
+        spec: TurnSpec,
+        *,
+        on_partial: Callable[[str], None] | None = None,
+        cancel_event: threading.Event | None = None,
+        state: DiscussionState | None = None,
+        plan: TurnPlan | None = None,
+    ) -> TurnResult:
+        """One turn, with no shared state.
+
+        Split out from ``generate_turn`` so the independent opening opinions can
+        run concurrently: they must not race on ``last_usage``, which the caller
+        aggregates instead.
+        """
         if cancel_event and cancel_event.is_set():
             raise GenerationCancelled()
         role = next((item for item in roles if item.id == spec.speaker_id), None)
@@ -324,7 +383,6 @@ class AnthropicDiscussionProvider:
             repaired = self._request(repair_prompt, on_partial=on_partial, cancel_event=cancel_event)
             usage = usage.add(repaired.usage)
             parsed = self._parse(repaired.text, spec, history)
-        self.last_usage = self.last_usage.add(usage)
         return TurnResult(parsed[0], parsed[1], usage)
 
     def _request(
