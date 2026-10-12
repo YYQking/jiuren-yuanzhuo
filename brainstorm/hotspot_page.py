@@ -55,12 +55,16 @@ class HotspotCard(QFrame):
         self.headline.setStyleSheet(f"color: {COLORS['cream']}; font-size: 17px; font-weight: 600;")
         self.headline.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(self.headline)
-        published = f"发布于 {_stamp(item.published_at)}" if item.published_at else f"发布时间未提供 · 获取于 {_stamp(item.fetched_at)}"
-        self.provenance = _plain_label(f"{item.publisher or '公开订阅源'}\n{published}")
+        published = f"发布于 {_stamp(item.published_at)}" if item.published_at else f"获取于 {_stamp(item.fetched_at)}"
+        provenance_lines = [item.publisher or "来源未提供"]
+        if item.time_note:
+            provenance_lines.append(item.time_note)
+        provenance_lines.append(published)
+        self.provenance = _plain_label("\n".join(provenance_lines))
         self.provenance.setStyleSheet(f"color: {COLORS['muted']}; font-size: 12px;")
         layout.addWidget(self.provenance)
 
-        summary = item.summary or "来源未提供摘要，可打开原文查看。"
+        summary = item.summary or "该条目没有摘要。"
         short_summary = summary if len(summary) <= 160 else summary[:160].rstrip() + "…"
         self.summary = _plain_label(short_summary)
         self.summary.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
@@ -233,7 +237,7 @@ class HotspotPage(QWidget):
         body.addStretch()
         self.scroll.setWidget(content)
         root.addWidget(self.scroll, 1)
-        footer = _plain_label("新闻线索均未核验。九人观点由角色模板或已配置的模型生成，与新闻原文分别展示。")
+        footer = _plain_label("条目由模型凭记忆生成，没有实时新闻能力；每条的时间与来源均为模型自述、未核验，可能已经过时。九人观点由角色模板或已配置的模型生成，与热点条目分别展示。")
         footer.setStyleSheet(f"color: {COLORS['dim']}; font-size: 11px;")
         root.addWidget(footer)
 
@@ -284,7 +288,7 @@ class HotspotPage(QWidget):
         provider, topic = self.provider, self.topic
         self.refresh_button.setEnabled(False)
         self.refresh_button.setText("刷新中…")
-        self.status_label.setText("正在更新公开来源……已有内容保留。")
+        self.status_label.setText("正在更新热点……已有内容保留。")
 
         def fetch():
             try:

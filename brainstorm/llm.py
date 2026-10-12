@@ -177,6 +177,19 @@ class AnthropicDiscussionProvider:
         session.usage_requests = self.last_usage.requests
         return session
 
+    def complete(self, prompt: str, *, cancel_event: threading.Event | None = None,
+                 max_tokens: int = 2600) -> str:
+        """One plain request returning raw text.
+
+        Used by callers that only need text back (for example the model-backed
+        social hotspot lookup), so they can reuse the very same configured API
+        without going through the discussion turn parser.  ``max_tokens`` is
+        generous by default because such callers ask for long structured output
+        (a pool of hotspots), unlike a single discussion turn.
+        """
+        return self._request(prompt, on_partial=None, cancel_event=cancel_event,
+                             max_tokens=max_tokens).text
+
     def extend_batch(
         self,
         session: DiscussionSession,
@@ -262,6 +275,8 @@ class AnthropicDiscussionProvider:
             f"主题：{topic}\n阶段：{spec.phase}\n发言人：{spec.speaker_name}\n{role_context}\n"
             f"来源：\n{source_context}\n前文：\n{history_context}\n{state_context}\n所有观点和来源均未核验。\n"
             "必须遵守：\n"
+            "0. 篇幅：一条发言控制在 200–350 字。直接说要害，不要复述前文，"
+            "不要重复自己已经说过的理由，不要写铺垫、客套和总结性空话。\n"
             "1. 不得重复前文已经说过的观点；必须带来新的理由、反例、条件或追问。\n"
             "2. intent 必须从 support（支持）、challenge（反驳）、question（追问）、"
             "elaborate（补充）、synthesize（整理）中选一个；若是你的首次发言则填 initial。\n"
@@ -311,6 +326,7 @@ class AnthropicDiscussionProvider:
         *,
         on_partial: Callable[[str], None] | None,
         cancel_event: threading.Event | None,
+        max_tokens: int = 800,
     ) -> _Response:
         client = self._client_or_raise()
         last_code = "request_failed"
@@ -323,7 +339,7 @@ class AnthropicDiscussionProvider:
                     raise ProviderFailure("unsupported_client", "模型客户端不支持流式消息")
                 text_parts: list[str] = []
                 input_tokens = output_tokens = 0
-                with stream_factory(model=self.model, max_tokens=1400, system="你是严谨的中文研究圆桌角色。", messages=[{"role": "user", "content": prompt}]) as stream:
+                with stream_factory(model=self.model, max_tokens=max_tokens, system="你是严谨的中文研究圆桌角色。", messages=[{"role": "user", "content": prompt}]) as stream:
                     for event in stream:
                         if cancel_event and cancel_event.is_set():
                             raise GenerationCancelled()
@@ -450,7 +466,7 @@ class OpenAICompatibleDiscussionProvider(AnthropicDiscussionProvider):
         self.base_url = base_url.rstrip("/")
 
     def _request(self, prompt: str, *, on_partial: Callable[[str], None] | None,
-                 cancel_event: threading.Event | None) -> _Response:
+                 cancel_event: threading.Event | None, max_tokens: int = 800) -> _Response:
         from .ai_settings import endpoint_url
         if cancel_event and cancel_event.is_set():
             raise GenerationCancelled()
@@ -459,7 +475,7 @@ class OpenAICompatibleDiscussionProvider(AnthropicDiscussionProvider):
         payload = json.dumps({
             "model": self.model,
             "temperature": 0.7,
-            "max_tokens": 1400,
+            "max_tokens": max_tokens,
             "messages": [
                 {"role": "system", "content": "你是严谨的中文研究圆桌角色。只输出有效 JSON。"},
                 {"role": "user", "content": prompt},

@@ -39,6 +39,7 @@ from .config import AppConfig
 from .models import DiscussionSession, Role, Utterance, ViewpointKind
 from .hotspot_page import HotspotPage
 from .hotspots import HotspotCache, HotspotProvider, default_hotspot_feeds
+from .model_hotspots import ModelHotspotProvider
 from .providers import resolve_providers
 from .qt_theme import COLORS, app_stylesheet, title_font
 from .roles import DEFAULT_ROLES
@@ -868,13 +869,21 @@ class MainWindow(QMainWindow):
         provider, news_provider, integration_status = resolve_providers(self.config)
         self.controller = SessionController(provider=provider, news_provider=news_provider, integration_status=integration_status, store=self.store)
         self.audio = AudioController()
-        hotspot_provider = HotspotProvider(
-            default_hotspot_feeds(self.config.news_feed_urls),
-            timeout=self.config.timeout_seconds,
-            max_items=max(12, self.config.max_news_items * 4),
-            cache=HotspotCache(),
-        )
+        hotspot_cache = HotspotCache()
         hotspot_network_allowed = self.config.allow_network and self.config.news_enabled and self.config.mode != "offline"
+        if integration_status.discussion_provider in {"anthropic", "openai-compatible"}:
+            # Public feeds are unreachable from here or return nothing for most
+            # topics, so the radar asks the already-configured model for a pool
+            # of current hotspots and shows a random ten of them. Every item is
+            # labelled as unverified model output.
+            hotspot_provider = ModelHotspotProvider(provider.complete, cache=hotspot_cache)
+        else:
+            hotspot_provider = HotspotProvider(
+                default_hotspot_feeds(self.config.news_feed_urls),
+                timeout=self.config.timeout_seconds,
+                max_items=max(12, self.config.max_news_items * 4),
+                cache=hotspot_cache,
+            )
         self.stack = QStackedWidget()
         self.lobby = LobbyPage(self.store)
         self.roundtable = RoundtablePage(self.controller, self.audio)

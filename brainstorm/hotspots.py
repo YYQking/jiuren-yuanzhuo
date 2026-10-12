@@ -50,6 +50,7 @@ class HotspotItem:
     coverage_count: int = 1
     related: bool = False
     cached: bool = False
+    time_note: str = ""
 
 
 @dataclass(frozen=True)
@@ -402,6 +403,7 @@ def _item_from_dict(data: dict[str, object]) -> HotspotItem:
         coverage_count=max(1, int(values.get("coverage_count", 1))),
         related=bool(values.get("related", False)),
         cached=bool(values.get("cached", False)),
+        time_note=str(values.get("time_note", "")),
     )
 
 
