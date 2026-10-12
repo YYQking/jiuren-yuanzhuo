@@ -204,6 +204,57 @@ class BIntegrationTests(unittest.TestCase):
         self.assertEqual(added[0].speaker_id, "moderator")
         self.assertEqual(added[0].phase, "状态整理")
 
+    def test_malformed_json_is_retried_once_with_the_error(self):
+        prompts = []
+
+        class Event:
+            def __init__(self, text): self.text = text
+
+        class Stream:
+            def __init__(self, text): self._text = text
+            def __enter__(self): return self
+            def __exit__(self, *_): return False
+            def __iter__(self): return iter([Event(self._text)])
+
+        class Messages:
+            def __init__(self): self.calls = 0
+            def stream(self, **kwargs):
+                self.calls += 1
+                prompts.append(kwargs["messages"][0]["content"])
+                # 第一次返回坏 JSON，第二次返回合法内容
+                return Stream('{"content": ' if self.calls == 1 else '{"content":"修正后的观点","kind":"机会"}')
+
+        class Client:
+            def __init__(self): self.messages = Messages()
+
+        client = Client()
+        provider = AnthropicDiscussionProvider(client=client, model="test-model")
+        result = provider.generate_turn("主题", [], [], [], TurnSpec("moderator", "主持人", "开场"))
+        self.assertEqual(result.utterance.content, "修正后的观点")
+        self.assertEqual(client.messages.calls, 2)
+        # 第二次请求必须把错误回灌给模型
+        self.assertIn("不是合法 JSON", prompts[1])
+
+    def test_malformed_json_twice_still_falls_back_honestly(self):
+        class Event:
+            text = '{"content": '
+
+        class Stream:
+            def __enter__(self): return self
+            def __exit__(self, *_): return False
+            def __iter__(self): return iter([Event()])
+
+        class Messages:
+            def stream(self, **_): return Stream()
+
+        class Client:
+            messages = Messages()
+
+        provider = AnthropicDiscussionProvider(client=Client(), model="test-model")
+        with self.assertRaises(ProviderFailure) as ctx:
+            provider.generate_turn("主题", [], [], [], TurnSpec("moderator", "主持人", "开场"))
+        self.assertEqual(ctx.exception.code, "malformed_json")
+
     def test_anthropic_extend_batch_prompt_contains_state_and_user_instruction(self):
         captured = []
         class Event:

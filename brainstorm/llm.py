@@ -286,8 +286,22 @@ class AnthropicDiscussionProvider:
                 "若你认为该对象不合适，可以改选回应对象，但必须在 intent 中如实表达。\n"
             )
         response = self._request(prompt, on_partial=on_partial, cancel_event=cancel_event)
-        parsed = self._parse(response.text, spec, history)
         usage = response.usage
+        try:
+            parsed = self._parse(response.text, spec, history)
+        except ProviderFailure as exc:
+            if exc.code != "malformed_json":
+                raise
+            # Feed the parse error back once instead of discarding the turn and
+            # dropping the whole discussion back to offline simulation.
+            repair_prompt = (
+                prompt
+                + f"\n\n你上一次的返回不是合法 JSON，错误是：{exc.safe_message}。"
+                "请只输出一个合法的 JSON 对象，不要 markdown，不要代码围栏，不要任何解释。\n"
+            )
+            repaired = self._request(repair_prompt, on_partial=on_partial, cancel_event=cancel_event)
+            usage = usage.add(repaired.usage)
+            parsed = self._parse(repaired.text, spec, history)
         self.last_usage = self.last_usage.add(usage)
         return TurnResult(parsed[0], parsed[1], usage)
 
