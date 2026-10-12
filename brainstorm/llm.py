@@ -26,6 +26,20 @@ from .models import (
 )
 
 
+def _strip_code_fence(text: str) -> str:
+    """Remove a surrounding markdown code fence that models add habitually.
+
+    Tolerates a language tag (```` ```json ````) and a trailing fence.
+    """
+    stripped = text.strip()
+    if not stripped.startswith("```"):
+        return stripped
+    body = stripped.split("\n", 1)[1] if "\n" in stripped else ""
+    if body.rstrip().endswith("```"):
+        body = body.rstrip()[:-3]
+    return body.strip()
+
+
 class ProviderFailure(RuntimeError):
     """A safe, user-facing provider failure with no secret-bearing details."""
 
@@ -328,7 +342,7 @@ class AnthropicDiscussionProvider:
     @staticmethod
     def _parse(text: str, spec: TurnSpec, history: Sequence[Utterance]) -> tuple[Utterance, OpportunityCard | None]:
         try:
-            data = json.loads(text)
+            data = json.loads(_strip_code_fence(text))
         except (TypeError, json.JSONDecodeError) as exc:
             raise ProviderFailure("malformed_json", "真实模型返回格式无法解析；已回退到离线模拟") from exc
         if not isinstance(data, dict):
@@ -451,8 +465,7 @@ class OpenAICompatibleDiscussionProvider(AnthropicDiscussionProvider):
                 if not isinstance(text, str) or not text.strip():
                     raise ProviderFailure("empty_response", "OpenAI 兼容接口返回了空内容；已回退到离线模拟")
                 text = text.strip()
-                if text.startswith('```') and text.endswith('```'):
-                    text = text.split('\n', 1)[-1].rsplit('```', 1)[0].strip()
+                text = _strip_code_fence(text)
                 if on_partial:
                     on_partial(text)
                 usage = data.get("usage", {}) if isinstance(data, dict) else {}

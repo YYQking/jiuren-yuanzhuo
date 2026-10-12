@@ -132,6 +132,13 @@ class BIntegrationTests(unittest.TestCase):
             '{"content":"回应","replies_to":"前文没有的人","intent":"challenge"}', spec, prior)
         self.assertIsNone(unknown.replies_to)
 
+    def test_parse_strips_markdown_code_fence(self):
+        spec = TurnSpec("r", "角色", "动态交锋")
+        payload = '```json\n{"content":"围栏内的观点","kind":"机会","intent":"support"}\n```'
+        utterance, _ = AnthropicDiscussionProvider._parse(payload, spec, [])
+        self.assertEqual(utterance.content, "围栏内的观点")
+        self.assertEqual(utterance.intent, "support")
+
     def test_anthropic_extend_batch_prompt_contains_state_and_user_instruction(self):
         captured = []
         class Event:
