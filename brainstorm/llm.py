@@ -24,6 +24,7 @@ from .models import (
     Utterance,
     ViewpointKind,
 )
+from .turn_planner import TurnPlan, plan_turn
 
 
 def _strip_code_fence(text: str) -> str:
@@ -199,20 +200,20 @@ class AnthropicDiscussionProvider:
         on_partial: Callable[[str, str], None] | None = None,
     ) -> list[Utterance]:
         selected = list(roles)
-        participants = [role for role in selected if role.id != "moderator"]
-        continuations = sum(item.phase == "动态交锋" and item.origin == "model" for item in session.utterances)
-        speaker = participants[continuations % len(participants)] if participants else None
+        plan = plan_turn(session, selected, state)
+        speaker = next((role for role in selected if role.id == plan.speaker_id), None)
         if speaker is None:
-            speaker = Role("moderator", "主持人", "编排、收敛和标记不确定性", "#b08d50", "整理当前讨论")
+            speaker = Role(plan.speaker_id, plan.speaker_name, "编排、收敛和标记不确定性", "#b08d50", "整理当前讨论")
         result = self.generate_turn(
             session.topic,
             selected,
             list(session.sources),
             list(session.utterances),
-            TurnSpec(speaker.id, speaker.name, "动态交锋", "假设"),
+            TurnSpec(plan.speaker_id, plan.speaker_name, plan.phase, plan.kind_hint),
             on_partial=(lambda text: on_partial(speaker.name, text)) if on_partial else None,
             cancel_event=cancel_event,
             state=state,
+            plan=plan,
         )
         return [result.utterance]
 
@@ -227,6 +228,7 @@ class AnthropicDiscussionProvider:
         on_partial: Callable[[str], None] | None = None,
         cancel_event: threading.Event | None = None,
         state: DiscussionState | None = None,
+        plan: TurnPlan | None = None,
     ) -> TurnResult:
         if cancel_event and cancel_event.is_set():
             raise GenerationCancelled()
@@ -282,6 +284,20 @@ class AnthropicDiscussionProvider:
             "triggered_by（触发变化的前文 event_id 列表）。礼貌性附和不算立场变化，此时填 null。\n"
             f"要求的 JSON 形状：{schema}"
         )
+        if plan is not None and plan.moderator:
+            prompt += (
+                f"\n本次是主持人的状态整理发言，介入原因：「{plan.intervention_reason}」。"
+                "请只整理已经发生的观点，不要提出新的主张。\n"
+            )
+        elif plan is not None:
+            target = next(
+                (f"[{item.event_id}] {item.speaker_name}" for item in reversed(history) if item.event_id == plan.reply_to_event_id),
+                "前文尚未解决的重点",
+            )
+            prompt += (
+                f"\n本地编排要求：本次发言必须回应 {target}；依据是「{plan.reason}」。"
+                "若你认为该对象不合适，可以改选回应对象，但必须在 intent 中如实表达。\n"
+            )
         response = self._request(prompt, on_partial=on_partial, cancel_event=cancel_event)
         parsed = self._parse(response.text, spec, history)
         usage = response.usage

@@ -139,6 +139,71 @@ class BIntegrationTests(unittest.TestCase):
         self.assertEqual(utterance.content, "围栏内的观点")
         self.assertEqual(utterance.intent, "support")
 
+    def test_extend_batch_picks_the_challenged_role(self):
+        captured = []
+
+        class Event:
+            text = '{"content":"我回应质疑","intent":"challenge"}'
+
+        class Stream:
+            def __enter__(self): return self
+            def __exit__(self, *_): return False
+            def __iter__(self): return iter([Event()])
+
+        class Messages:
+            def stream(self, **kwargs):
+                captured.append(kwargs["messages"][0]["content"])
+                return Stream()
+
+        class Client:
+            messages = Messages()
+
+        provider = AnthropicDiscussionProvider(client=Client(), model="test-model")
+        session = DiscussionSession(topic="社区养老", selected_role_ids=["builder", "skeptic"])
+        session.append_utterance(Utterance("builder", "创业实践者", "先做小试点", ViewpointKind.OPPORTUNITY, "独立观点", origin="model"))
+        session.append_utterance(Utterance("skeptic", "怀疑者", "没和现有替代方案比", ViewpointKind.RISK, "动态交锋",
+                                          replies_to="event-000000", origin="model", intent="challenge"))
+        roles = [
+            Role("builder", "创业实践者", "把机会转成产品", "#7c3aed", "关注谁付费。"),
+            Role("skeptic", "怀疑者", "寻找伪需求", "#dc2626", "主动寻找反例。"),
+        ]
+        added = provider.extend_batch(session, DiscussionState(), roles=roles)
+        self.assertEqual(len(added), 1)
+        self.assertEqual(added[0].speaker_id, "builder")
+        self.assertIn("创业实践者", captured[0])
+        self.assertIn("质疑尚未回应", captured[0])
+
+    def test_extend_batch_inserts_moderator_when_intervention_triggers(self):
+        class Event:
+            text = '{"content":"本阶段整理","kind":"总结","intent":"synthesize"}'
+
+        class Stream:
+            def __enter__(self): return self
+            def __exit__(self, *_): return False
+            def __iter__(self): return iter([Event()])
+
+        class Messages:
+            def stream(self, **_): return Stream()
+
+        class Client:
+            messages = Messages()
+
+        provider = AnthropicDiscussionProvider(client=Client(), model="test-model")
+        session = DiscussionSession(topic="社区养老", selected_role_ids=["trend", "builder"])
+        for index in range(6):
+            session.append_utterance(Utterance(
+                "trend" if index % 2 == 0 else "builder",
+                "趋势分析师" if index % 2 == 0 else "创业实践者",
+                f"第{index}条", ViewpointKind.ASSUMPTION, "动态交锋", origin="model",
+            ))
+        roles = [
+            Role("trend", "趋势分析师", "辨别变化", "#2563eb", "关注变化。"),
+            Role("builder", "创业实践者", "把机会转成产品", "#7c3aed", "关注谁付费。"),
+        ]
+        added = provider.extend_batch(session, DiscussionState(), roles=roles)
+        self.assertEqual(added[0].speaker_id, "moderator")
+        self.assertEqual(added[0].phase, "状态整理")
+
     def test_anthropic_extend_batch_prompt_contains_state_and_user_instruction(self):
         captured = []
         class Event:
