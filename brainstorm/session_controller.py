@@ -14,7 +14,7 @@ from .news import NewsFetchResult, NewsProvider, OfflineNewsProvider
 from .playback import DiscussionPlayback, PlaybackState
 from .providers import IntegrationStatus
 from .storage import SessionStore
-from .turn_planner import detect_intervention
+from .turn_planner import detect_intervention, mark_duplicates
 
 
 class _NewsWorker(QObject):
@@ -502,6 +502,7 @@ class SessionController(QObject):
             self.session.append_utterance(item)
             self.store.save(self.session)
         self.session.rebuild_state()
+        mark_duplicates(self.session)
         if any(item.speaker_id == "moderator" and item.phase == "状态整理" for item in items):
             self.session.discussion_state.host_intervention_reason = detect_intervention(self.session)[1]
         elif any(item.speaker_id != "moderator" for item in items):

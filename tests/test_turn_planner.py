@@ -1,7 +1,7 @@
 import unittest
 
 from brainstorm.models import DiscussionSession, DiscussionState, Role, StanceChange, Utterance, ViewpointKind
-from brainstorm.turn_planner import TurnPlan, detect_intervention, plan_turn
+from brainstorm.turn_planner import TurnPlan, detect_intervention, mark_duplicates, plan_turn
 
 
 ROLES = [
@@ -114,6 +114,26 @@ class TurnPlannerTests(unittest.TestCase):
         plan = plan_turn(session, [], DiscussionState())
         self.assertEqual(plan.speaker_id, "trend")
         self.assertEqual(plan.speaker_name, "趋势分析师")
+
+    def test_repeated_content_is_marked_without_being_deleted(self):
+        session = build(
+            say("trend", "趋势分析师", "先做小范围试点"),
+            say("builder", "创业实践者", "先 做 小范围 试点"),
+            say("skeptic", "怀疑者", "完全不同的观点"),
+        )
+        marked = mark_duplicates(session)
+        self.assertEqual(marked, 1)
+        self.assertEqual(len(session.utterances), 3)
+        self.assertFalse(session.utterances[0].duplicate)
+        self.assertTrue(session.utterances[1].duplicate)
+        self.assertFalse(session.utterances[2].duplicate)
+
+    def test_duplicate_marking_ignores_moderator_and_user_turns(self):
+        session = build(
+            say("moderator", "主持人", "本阶段整理"),
+            say("moderator", "主持人", "本阶段整理"),
+        )
+        self.assertEqual(mark_duplicates(session), 0)
 
 
 class InterventionTests(unittest.TestCase):

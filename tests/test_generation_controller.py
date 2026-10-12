@@ -157,6 +157,16 @@ class GenerationControllerTests(unittest.TestCase):
         controller._apply_batch([Utterance("trend", "趋势分析师", "继续", ViewpointKind.ASSUMPTION, "动态交锋", origin="model")])
         self.assertEqual(session.discussion_state.host_intervention_reason, "")
 
+    def test_batch_marks_repeated_role_content(self):
+        controller = self.track(SessionController(store=SessionStore(self._history_tmp)))
+        session = DiscussionSession(topic="社区养老", selected_role_ids=["trend"])
+        session.append_utterance(Utterance("trend", "趋势分析师", "先做小范围试点", ViewpointKind.ASSUMPTION, "动态交锋", origin="model"))
+        controller.playback.live = True
+        controller.playback.start(session)
+        controller._apply_batch([Utterance("trend", "趋势分析师", "先 做 小范围 试点", ViewpointKind.ASSUMPTION, "动态交锋", origin="model")])
+        self.assertTrue(session.utterances[-1].duplicate)
+        self.assertEqual(len(session.utterances), 2)
+
     def test_cancel_sets_provider_cancel_event(self):
         provider = SlowProvider()
         controller = self.track(SessionController(provider=provider))

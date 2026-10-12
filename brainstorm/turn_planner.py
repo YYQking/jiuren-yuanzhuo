@@ -10,6 +10,7 @@ the model is unavailable or suggests an impossible speaker.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 
@@ -105,6 +106,28 @@ def _roles_from_history(session: DiscussionSession) -> list[Role]:
             continue
         found.setdefault(item.speaker_id, item.speaker_name)
     return [Role(role_id, name, "", "#b08d50", "") for role_id, name in found.items()]
+
+
+def mark_duplicates(session: DiscussionSession) -> int:
+    """Flag repeats of an earlier role turn. Never deletes anything.
+
+    The protocol requires repeated content to stay in the record with only a
+    marker added.  Comparison is deliberately blunt -- whitespace-stripped exact
+    match -- so the marker is explainable rather than a similarity guess.
+    """
+    seen: set[str] = set()
+    marked = 0
+    for index, item in enumerate(session.utterances):
+        if item.speaker_id in {MODERATOR_ID, USER_ID}:
+            continue
+        normalized = re.sub(r"\s+", "", item.content)
+        if normalized in seen:
+            if not item.duplicate:
+                session.utterances[index] = replace(item, duplicate=True)
+            marked += 1
+        else:
+            seen.add(normalized)
+    return marked
 
 
 def detect_intervention(session: DiscussionSession, recent: int = 6) -> tuple[bool, str]:
