@@ -601,6 +601,15 @@ class SessionController(QObject):
             self.store.save(self.session)
         self.session.rebuild_state()
         mark_duplicates(self.session)
+        # The orchestrator refreshes the state inside its own request, so tracking
+        # it costs no extra call. The worker only sets the attribute; applying it
+        # to the session happens here, on the GUI thread.
+        refresh = getattr(self.provider, "last_state_refresh", None)
+        if refresh is not None:
+            self.session.discussion_state.consensus = list(refresh.consensus)
+            self.session.discussion_state.conflicts = list(refresh.conflicts)
+            self.session.discussion_state.unresolved_questions = list(refresh.unresolved)
+            self.provider.last_state_refresh = None
         if any(item.speaker_id == "moderator" and item.phase == "状态整理" for item in items):
             self.session.discussion_state.host_intervention_reason = detect_intervention(self.session)[1]
         elif any(item.speaker_id != "moderator" for item in items):

@@ -16,6 +16,14 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .jsonutil import strip_code_fence
+from .orchestration import (
+    OrchestrationRefresh,
+    Review,
+    build_orchestration_prompt,
+    build_review_prompt,
+    parse_orchestration,
+    parse_review,
+)
 from .models import (
     DiscussionSession,
     DiscussionState,
@@ -103,6 +111,10 @@ class AnthropicDiscussionProvider:
         self.max_retries = max(0, min(int(max_retries), 3))
         self._client = client
         self.last_usage = Usage()
+        # Set by the last extend_batch call. The controller reads these on the GUI
+        # thread rather than letting the worker touch the shared session.
+        self.last_state_refresh: OrchestrationRefresh | None = None
+        self.last_review: Review | None = None
 
     @property
     def configured(self) -> bool:
@@ -230,6 +242,35 @@ class AnthropicDiscussionProvider:
         return self._request(prompt, on_partial=None, cancel_event=cancel_event,
                              max_tokens=max_tokens).text
 
+    def orchestrate(
+        self,
+        session: DiscussionSession,
+        roles: Sequence[Role],
+        local: TurnPlan,
+        state: DiscussionState | None,
+        *,
+        cancel_event: threading.Event | None = None,
+    ) -> tuple[TurnPlan, OrchestrationRefresh]:
+        """Let the model decide the turn, and refresh the state in the same call."""
+        prompt = build_orchestration_prompt(session, roles, local, state)
+        response = self._request(prompt, on_partial=None, cancel_event=cancel_event)
+        self.last_usage = self.last_usage.add(response.usage)
+        return parse_orchestration(response.text, session, roles, local)
+
+    def review_turn(
+        self,
+        session: DiscussionSession,
+        plan: TurnPlan,
+        utterance: Utterance,
+        *,
+        cancel_event: threading.Event | None = None,
+    ) -> Review:
+        """Judge whether the turn that just came back actually advanced things."""
+        prompt = build_review_prompt(session, plan, utterance)
+        response = self._request(prompt, on_partial=None, cancel_event=cancel_event)
+        self.last_usage = self.last_usage.add(response.usage)
+        return parse_review(response.text)
+
     def extend_batch(
         self,
         session: DiscussionSession,
@@ -240,7 +281,20 @@ class AnthropicDiscussionProvider:
         on_partial: Callable[[str, str], None] | None = None,
     ) -> list[Utterance]:
         selected = list(roles)
-        plan = plan_turn(session, selected, state)
+        local = plan_turn(session, selected, state)
+        self.last_state_refresh = None
+        self.last_review = None
+        plan = local
+        try:
+            # The local planner supplies exact structural facts (who owes a reply,
+            # which question is unanswered); the model decides what actually
+            # matters and what this turn must answer.
+            plan, refresh = self.orchestrate(session, selected, local, state, cancel_event=cancel_event)
+            self.last_state_refresh = refresh
+        except (ProviderFailure, ValueError):
+            # Honest fallback: keep the structural plan instead of dropping the turn.
+            plan = local
+
         speaker = next((role for role in selected if role.id == plan.speaker_id), None)
         if speaker is None:
             speaker = Role(plan.speaker_id, plan.speaker_name, "编排、收敛和标记不确定性", "#b08d50", "整理当前讨论")
@@ -255,7 +309,44 @@ class AnthropicDiscussionProvider:
             state=state,
             plan=plan,
         )
-        return [result.utterance]
+        if plan.moderator:
+            return [result.utterance]
+
+        try:
+            review = self.review_turn(session, plan, result.utterance, cancel_event=cancel_event)
+        except (ProviderFailure, ValueError):
+            # A failed review must never block the discussion; the turn stands.
+            return [result.utterance]
+        self.last_review = review
+        if review.passed:
+            return [result.utterance]
+
+        # Ask for one rewrite, carrying the concrete criticism back to the model.
+        # A dedicated directive, not the review prompt: that one asks for a
+        # different JSON shape and would fight with the turn schema above.
+        rewrite_prompt = (
+            f"\n质检判定这条发言不合格，具体批评是：{review.criticism}。\n"
+            f"你上一次的发言是：「{result.utterance.content[:400]}」\n"
+            "请重写这一条发言：直接解决上述批评，不要重复批评里指出的内容，"
+            "必须回答被指派的问题，不要编造来源材料里没有的数据。\n"
+        )
+        try:
+            rewritten = self._generate_turn_result(
+                session.topic,
+                selected,
+                list(session.sources),
+                list(session.utterances),
+                TurnSpec(plan.speaker_id, plan.speaker_name, plan.phase, plan.kind_hint),
+                on_partial=(lambda text: on_partial(speaker.name, text)) if on_partial else None,
+                cancel_event=cancel_event,
+                state=state,
+                plan=plan,
+                extra_prompt=rewrite_prompt,
+            )
+        except (ProviderFailure, ValueError):
+            return [result.utterance]
+        self.last_usage = self.last_usage.add(rewritten.usage)
+        return [rewritten.utterance]
 
     def generate_turn(
         self,
@@ -289,6 +380,7 @@ class AnthropicDiscussionProvider:
         cancel_event: threading.Event | None = None,
         state: DiscussionState | None = None,
         plan: TurnPlan | None = None,
+        extra_prompt: str = "",
     ) -> TurnResult:
         """One turn, with no shared state.
 
@@ -362,10 +454,16 @@ class AnthropicDiscussionProvider:
                 (f"[{item.event_id}] {item.speaker_name}" for item in reversed(history) if item.event_id == plan.reply_to_event_id),
                 "前文尚未解决的重点",
             )
+            required = plan.must_answer or plan.reason
+            avoid = f"必须避免重复：{'；'.join(plan.avoid)}。\n" if plan.avoid else ""
+            source_note = "编排要求" if plan.source == "model" else "本地编排要求"
             prompt += (
-                f"\n本地编排要求：本次发言必须回应 {target}；依据是「{plan.reason}」。"
-                "若你认为该对象不合适，可以改选回应对象，但必须在 intent 中如实表达。\n"
+                f"\n{source_note}：本次发言必须回应 {target}，并且必须回答：{required}。"
+                f"{avoid}"
+                "若你认为回应对象不合适，可以改选，但必须在 intent 中如实表达。\n"
             )
+        if extra_prompt:
+            prompt += extra_prompt
         response = self._request(prompt, on_partial=on_partial, cancel_event=cancel_event)
         usage = response.usage
         try:

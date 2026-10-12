@@ -50,6 +50,10 @@ class TurnPlan:
     moderator: bool = False
     intervention_reason: str = ""
     source: str = "local"
+    # Filled in by the orchestrator (phase 3) when a model decides the turn.
+    must_answer: str = ""
+    avoid: tuple[str, ...] = ()
+    key_question: str = ""
 
 
 def _role_utterances(session: DiscussionSession) -> list[Utterance]:

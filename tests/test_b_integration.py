@@ -190,7 +190,8 @@ class BIntegrationTests(unittest.TestCase):
         session = DiscussionSession(topic="数字服务", selected_role_ids=["r"])
         prior = session.append_utterance(Utterance("other", "另一角色", "现有观点", ViewpointKind.OPPORTUNITY, "独立观点", origin="model", intent="support"))
         provider.extend_batch(session, DiscussionState(), roles=[Role("r", "角色", "职责", "#fff", "提示")])
-        prompt = captured[0]
+        # 第一次请求现在是编排调用，生成提示词要用它的 JSON 形状来定位
+        prompt = next(item for item in captured if "stance_change" in item)
         # 提示词必须索要意图、立场变化，并把 event_id 交给模型
         self.assertIn("intent", prompt)
         self.assertIn("stance_change", prompt)
@@ -305,6 +306,106 @@ class BIntegrationTests(unittest.TestCase):
         added = provider.extend_batch(session, DiscussionState(), roles=roles)
         self.assertEqual(added[0].speaker_id, "moderator")
         self.assertEqual(added[0].phase, "状态整理")
+
+    def _orchestrated_provider(self, replies):
+        """A fake client that answers each call with the next canned reply."""
+        prompts = []
+
+        class Event:
+            def __init__(self, text): self.text = text
+
+        class Stream:
+            def __init__(self, text): self._text = text
+            def __enter__(self): return self
+            def __exit__(self, *_): return False
+            def __iter__(self): return iter([Event(self._text)])
+
+        class Messages:
+            def __init__(self): self.calls = 0
+            def stream(self, **kwargs):
+                index = min(self.calls, len(replies) - 1)
+                self.calls += 1
+                prompts.append(kwargs["messages"][0]["content"])
+                return Stream(replies[index])
+
+        class Client:
+            def __init__(self): self.messages = Messages()
+
+        client = Client()
+        provider = AnthropicDiscussionProvider(client=client, model="test-model")
+        return provider, client, prompts
+
+    ORCHESTRATION_OK = (
+        '{"key_question":"第一批用户为什么不用现成的？","speaker_id":"skeptic",'
+        '"must_answer":"说明第一批用户为什么今天就要解决","avoid":["重复讲趋势"],'
+        '"intervene":false,"intervention_reason":"",'
+        '"consensus":["先做小范围试点"],"conflicts":["需求强度未验证"],"unresolved":["付费意愿"]}'
+    )
+    REVIEW_OK = '{"passed":true,"repeats":"","avoided":"","fabricated":""}'
+
+    def _two_role_session(self):
+        session = DiscussionSession(topic="社区养老", selected_role_ids=["builder", "skeptic"])
+        session.append_utterance(Utterance("builder", "创业实践者", "先做小试点", ViewpointKind.OPPORTUNITY, "独立观点", origin="model"))
+        return session
+
+    def _two_roles(self):
+        return [
+            Role("builder", "创业实践者", "把机会转成产品", "#7c3aed", "关注谁付费。"),
+            Role("skeptic", "怀疑者", "寻找伪需求", "#dc2626", "主动寻找反例。"),
+        ]
+
+    def test_orchestrator_decision_overrides_the_local_plan(self):
+        provider, client, prompts = self._orchestrated_provider([
+            self.ORCHESTRATION_OK,
+            '{"content":"我来说明付费动机","kind":"风险","intent":"challenge"}',
+            self.REVIEW_OK,
+        ])
+        added = provider.extend_batch(self._two_role_session(), DiscussionState(), roles=self._two_roles())
+        self.assertEqual(added[0].speaker_id, "skeptic")
+        self.assertEqual(added[0].speaker_name, "怀疑者")
+        self.assertIsNotNone(provider.last_state_refresh)
+        self.assertEqual(provider.last_state_refresh.consensus, ("先做小范围试点",))
+        # 生成提示词必须带上"必须回答"和"必须避免"
+        self.assertIn("第一批用户为什么今天就要解决", prompts[1])
+        self.assertIn("重复讲趋势", prompts[1])
+        self.assertEqual(client.messages.calls, 3)
+
+    def test_orchestration_failure_falls_back_to_the_local_plan(self):
+        # 假客户端对每次请求都返回发言人内容，编排结果无法解析，必须退回本地计划
+        provider, _, _ = self._orchestrated_provider([
+            '{"content":"我回应质疑","intent":"challenge"}',
+        ])
+        session = self._two_role_session()
+        session.append_utterance(Utterance("skeptic", "怀疑者", "没和替代方案比", ViewpointKind.RISK, "动态交锋",
+                                          replies_to="event-000000", origin="model", intent="challenge"))
+        added = provider.extend_batch(session, DiscussionState(), roles=self._two_roles())
+        self.assertEqual(added[0].speaker_id, "builder")
+        self.assertIsNone(provider.last_state_refresh)
+
+    def test_failing_review_triggers_exactly_one_rewrite(self):
+        provider, client, prompts = self._orchestrated_provider([
+            self.ORCHESTRATION_OK,
+            '{"content":"第一版发言","kind":"机会","intent":"support"}',
+            '{"passed":false,"repeats":"重复了 event-000000","avoided":"回避了付费动机","fabricated":""}',
+            '{"content":"第二版发言","kind":"机会","intent":"support"}',
+        ])
+        added = provider.extend_batch(self._two_role_session(), DiscussionState(), roles=self._two_roles())
+        self.assertEqual(added[0].content, "第二版发言")
+        self.assertEqual(client.messages.calls, 4)
+        # 回炉请求必须把具体批评带回去
+        self.assertIn("重复了 event-000000", prompts[3])
+        self.assertIn("回避了付费动机", prompts[3])
+
+    def test_review_failure_keeps_the_turn_and_does_not_retry(self):
+        provider, client, _ = self._orchestrated_provider([
+            self.ORCHESTRATION_OK,
+            '{"content":"唯一一版","kind":"机会","intent":"support"}',
+            '这不是 JSON',
+        ])
+        added = provider.extend_batch(self._two_role_session(), DiscussionState(), roles=self._two_roles())
+        self.assertEqual(added[0].content, "唯一一版")
+        self.assertEqual(client.messages.calls, 3)
+        self.assertIsNone(provider.last_review)
 
     def test_malformed_json_is_retried_once_with_the_error(self):
         prompts = []

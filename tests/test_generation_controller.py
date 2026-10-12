@@ -262,6 +262,23 @@ class GenerationControllerTests(unittest.TestCase):
         self.assertEqual([done for done, _ in progress], [1, 2, 3, 4])
         self.assertEqual(progress[-1], (4, 4))
 
+    def test_batch_applies_the_model_state_refresh(self):
+        from brainstorm.orchestration import OrchestrationRefresh
+
+        controller = self.track(SessionController(store=SessionStore(self._history_tmp)))
+        session = DiscussionSession(topic="社区养老", selected_role_ids=["trend"])
+        session.append_utterance(Utterance("trend", "趋势分析师", "开场", ViewpointKind.ASSUMPTION, "独立观点", origin="model"))
+        controller.playback.live = True
+        controller.playback.start(session)
+        controller.provider.last_state_refresh = OrchestrationRefresh(
+            consensus=("先做小范围试点",), conflicts=("需求强度未验证",), unresolved=("付费意愿",),
+        )
+        controller._apply_batch([Utterance("trend", "趋势分析师", "继续", ViewpointKind.ASSUMPTION, "动态交锋", origin="model")])
+        self.assertEqual(session.discussion_state.consensus, ["先做小范围试点"])
+        self.assertEqual(session.discussion_state.conflicts, ["需求强度未验证"])
+        self.assertEqual(session.discussion_state.unresolved_questions, ["付费意愿"])
+        self.assertIsNone(controller.provider.last_state_refresh)
+
     def test_cancel_sets_provider_cancel_event(self):
         provider = SlowProvider()
         controller = self.track(SessionController(provider=provider))
