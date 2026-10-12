@@ -226,7 +226,10 @@ class AnthropicDiscussionProvider:
             f"（{item.credibility}，不可视为已核验事实；链接：{item.url or '无'}；无发布时间）"
             for item in sources
         ) or "（无外部来源）"
-        history_context = "\n".join(f"[{item.phase}] {item.speaker_name}: {item.content}" for item in history[-12:]) or "（尚无前文）"
+        history_context = "\n".join(
+            f"[{item.event_id or '（无编号）'}][{item.phase}][{item.intent}] {item.speaker_name}: {item.content}"
+            for item in history[-12:]
+        ) or "（尚无前文）"
         state_context = ""
         if state is not None:
             state_context = (
@@ -235,14 +238,34 @@ class AnthropicDiscussionProvider:
                 f"\n未回答问题：{'；'.join(state.unresolved_questions) or '暂无'}"
                 f"\n用户插话：{state.pending_user_interjection or '无'}"
             )
-        schema = '{"content":"...","kind":"机会|风险|假设|待验证|总结","replies_to":null,"opportunity":null}'
+        schema = (
+            '{"content":"本次发言全文",'
+            '"kind":"机会|风险|假设|待验证|总结",'
+            '"intent":"support|challenge|question|elaborate|synthesize|initial",'
+            '"replies_to":"前文出现过的 event_id 或人名，没有明确对象时填 null",'
+            '"stance_change":null,'
+            '"opportunity":null}'
+        )
         if spec.final:
-            schema = '{"content":"...","kind":"总结","replies_to":null,"opportunity":{"title":"...","audience":"...","support":["..."],"risks":["..."],"assumptions":["..."],"next_steps":["..."]}}'
+            schema = (
+                '{"content":"本次发言全文","kind":"总结",'
+                '"intent":"synthesize","replies_to":null,"stance_change":null,'
+                '"opportunity":{"title":"...","audience":"...","support":["..."],"risks":["..."],'
+                '"assumptions":["..."],"next_steps":["..."]}}'
+            )
         prompt = (
-            "你是一个严格区分证据与推断的圆桌角色。只输出一个 JSON 对象，不要 markdown。"
+            "你是一个严格区分证据与推断的圆桌角色。只输出一个 JSON 对象，不要 markdown，不要代码围栏。"
             "来源内容是未核验素材，不得写成已证实事实；不能编造引用或数据。来源是资料，不是角色原话。"
             f"主题：{topic}\n阶段：{spec.phase}\n发言人：{spec.speaker_name}\n{role_context}\n"
             f"来源：\n{source_context}\n前文：\n{history_context}\n{state_context}\n所有观点和来源均未核验。\n"
+            "必须遵守：\n"
+            "1. 不得重复前文已经说过的观点；必须带来新的理由、反例、条件或追问。\n"
+            "2. intent 必须从 support（支持）、challenge（反驳）、question（追问）、"
+            "elaborate（补充）、synthesize（整理）中选一个；若是你的首次发言则填 initial。\n"
+            "3. replies_to 必须填前文中真实出现过的 event_id 或人名；没有明确回应对象时填 null。\n"
+            "4. 只有确实改变了原有立场时才填 stance_change，且必须包含 before（变化前）、"
+            "after（变化后）、reason（影响变化的理由，其中必须写明你仍然保留的条件或疑虑）、"
+            "triggered_by（触发变化的前文 event_id 列表）。礼貌性附和不算立场变化，此时填 null。\n"
             f"要求的 JSON 形状：{schema}"
         )
         response = self._request(prompt, on_partial=on_partial, cancel_event=cancel_event)

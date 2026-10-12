@@ -67,6 +67,41 @@ class BIntegrationTests(unittest.TestCase):
         self.assertEqual(utterance.stance_change.after, "先做小范围试点")
         self.assertEqual(utterance.verification, "unverified")
 
+    def test_prompt_requests_intent_stance_and_event_ids(self):
+        captured = []
+
+        class Event:
+            text = '{"content":"回应","intent":"challenge"}'
+
+        class Stream:
+            def __enter__(self): return self
+            def __exit__(self, *_): return False
+            def __iter__(self): return iter([Event()])
+
+        class Messages:
+            def stream(self, **kwargs):
+                captured.append(kwargs["messages"][0]["content"])
+                return Stream()
+
+        class Client:
+            messages = Messages()
+
+        provider = AnthropicDiscussionProvider(client=Client(), model="test-model")
+        session = DiscussionSession(topic="数字服务", selected_role_ids=["r"])
+        prior = session.append_utterance(Utterance("other", "另一角色", "现有观点", ViewpointKind.OPPORTUNITY, "独立观点", origin="model", intent="support"))
+        provider.extend_batch(session, DiscussionState(), roles=[Role("r", "角色", "职责", "#fff", "提示")])
+        prompt = captured[0]
+        # 提示词必须索要意图、立场变化，并把 event_id 交给模型
+        self.assertIn("intent", prompt)
+        self.assertIn("stance_change", prompt)
+        self.assertIn(prior.event_id, prompt)
+        self.assertIn("support", prompt)
+        self.assertIn("challenge", prompt)
+        # 立场变化必须写明仍然保留的条件或疑虑（协议 §2.3 的第四项）
+        self.assertIn("仍然保留的条件", prompt)
+        # 必须明确禁止重复前文
+        self.assertIn("不得重复", prompt)
+
     def test_anthropic_parse_converts_speaker_reply_reference_to_event_id(self):
         spec = TurnSpec("r", "角色", "动态交锋")
         prior = [Utterance("other", "另一角色", "原始观点", ViewpointKind.OPPORTUNITY, "首轮观点", event_id="event-000001", sequence=1)]
