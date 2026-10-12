@@ -284,20 +284,41 @@ git commit -m "feat: prompt requests intent, stance_change and event ids"
 
 - [ ] **Step 3: 改为从后往前找**
 
-`brainstorm/llm.py`，把第 328 行：
+`brainstorm/llm.py`，把第 323-328 行：
 
 ```python
+        replies_to = data.get("replies_to")
+        prior_ids = {item.speaker_id for item in history} | {item.event_id for item in history}
+        if not isinstance(replies_to, str) or replies_to not in prior_ids:
+            replies_to = None
+        else:
             replies_to = next((item.event_id for item in history if item.event_id == replies_to or item.speaker_id == replies_to), replies_to)
 ```
 
 替换为：
 
 ```python
+        replies_to = data.get("replies_to")
+        if not isinstance(replies_to, str) or not replies_to.strip():
+            replies_to = None
+        else:
+            # Accept an event id, a speaker id, or the display name the prompt
+            # actually shows the model. Always resolve to the LATEST match so a
+            # role that has spoken repeatedly is not pinned to its first turn.
+            reference = replies_to.strip()
             replies_to = next(
-                (item.event_id for item in reversed(history) if item.event_id == replies_to or item.speaker_id == replies_to),
-                replies_to,
+                (
+                    item.event_id
+                    for item in reversed(history)
+                    if item.event_id == reference
+                    or item.speaker_id == reference
+                    or item.speaker_name == reference
+                ),
+                None,
             )
 ```
+
+> **实施记录：** 只加 `reversed()` 是不够的。Task 1 的提示词让模型填"event_id **或人名**"，而第 1 期的历史渲染给模型看的正是 `趋势分析师` 这种**显示名**；原解析只认 `speaker_id`，于是模型照着提示词填人名时 `replies_to` 会被整个丢掉。这一点由 Task 2 的测试暴露出来（断言 `None != 'event-000002'`），所以实现改为同时接受 `event_id`、`speaker_id` 与 `speaker_name`，并对前文不存在的引用返回 `None`。第 1 期的提示词与解析器因此保持一致，不应回退。
 
 - [ ] **Step 4: 运行测试确认通过**
 

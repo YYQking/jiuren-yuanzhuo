@@ -130,6 +130,7 @@
 | brainstorm/playback.py | 不依赖 Qt 的播放状态机 |
 | brainstorm/roles.py、models.py | 固定角色与讨论数据模型 |
 | brainstorm/engine.py | 离线讨论、状态分析与整理 |
+| brainstorm/turn_planner.py | 本地结构调度：谁被反驳未回、哪个提问没人答、谁久未发言、是否该主持人介入。**只做结构判断，不做语义相关性判断**；输出供模型编排层使用，也是模型不可用时的兜底 |
 | brainstorm/llm.py | 模型请求、上下文、JSON 解析、usage、重试 |
 | brainstorm/providers.py、config.py | provider 选择和网络/模型权限配置 |
 | brainstorm/ai_settings.py | AI 设置对话框、地址校验与 DPAPI 存储 |
@@ -180,7 +181,7 @@ $py='C:\Users\14726\.cache\codex-runtimes\codex-primary-runtime\dependencies\pyt
 
 ## 10. 已验证证据与边界
 
-本次会话最后的软件验证结果：
+上一次交付会话的验证结果（2026-10-12 之前）：
 
 - 127 项测试通过（此前版本为 124 项）。
 - 最新 `dist-manual` 构建成功。
@@ -190,7 +191,17 @@ $py='C:\Users\14726\.cache\codex-runtimes\codex-primary-runtime\dependencies\pyt
 
 限制：未在最近修复后跑完整真实 DeepSeek 长讨论到总结导出；三项针对性回归通过不能代替用户对整场交互的满意度验收。未证明所有新闻源当前可达，未证明国际消息请求全经国内渠道。
 
-README、旧阶段文档、旧 dist/build 与 `desktop-release/九人圆桌桌面版-无限讨论` 有历史内容，**不可视为当前交付版本**。不要按旧说明把较旧 EXE 覆盖桌面最新版。本目录检查时并非 Git 仓库，先确认环境再执行 Git 操作。
+2026-10-12 对话模型改造（第一期、第二期）的验证结果：
+
+- **152 项测试通过、0 错误 0 失败**（基线 127 项，新增 25 项）。
+- 上一轮修复的三项回归保护保持通过：手动逐条展示、气泡不显示原始模型载体、生成期间保持当前观点。
+- 主窗口冒烟检查通过：`MainWindow()` 可构建，`show()` 后 `isVisible()` 为 True，正常关闭。
+- 测试未污染 `C:\Users\14726\九人圆桌` 真实历史目录（已核对，测试时段内该目录无任何改动）。
+- 未被验证的部分见第 12 节。
+
+README、旧阶段文档、旧 dist/build 与 `desktop-release/九人圆桌桌面版-无限讨论` 有历史内容，**不可视为当前交付版本**。不要按旧说明把较旧 EXE 覆盖桌面最新版。
+
+本目录已于 2026-10-12 初始化为 Git 仓库。对话模型改造在分支 `conversation-model` 上进行，回退点是基线提交 `c75f8b5`。`.gitignore` 当时已补全：`build-*/`、`dist-*/`、`.qt-build-runtime/`（单目录 660 MB）、`.pefile-runtime/`、`.uv-cache/`、`artifacts/`（43 MB 验证截图）、`desktop-release/九人圆桌桌面版-无限讨论/`（115 MB 历史打包程序）以及根目录旧 `九人圆桌.exe` 均不入库，仓库实际只有约 1.6 MB。**注意 `*.spec` 仍被忽略，所以打包配置 `九人圆桌-Qt.spec` 不在版本控制内。** 本仓库的 git 身份、`core.quotepath=false`、`core.autocrlf=false` 都只写在仓库本地配置里，没有动全局配置。
 
 ## 11. 接手后的推荐顺序
 
@@ -200,5 +211,29 @@ README、旧阶段文档、旧 dist/build 与 `desktop-release/九人圆桌桌�
 4. 需要进一步验证时，优先真实讨论闭环、生成等待期间旧观点是否保持、下一步一次一条、结束总结与导出。
 5. 若优化新闻，先审查国内通道要求与实际 feeds 的差距，再测延迟、失败缓存与取消。
 6. 发布时正常关闭旧程序，确认目标绝对路径后更新；验证启动与包内容，避免把秘密或用户历史打包。
+
+## 12. 对话模型改造现状（2026-10-12）
+
+用户要求"完善对话模型"，明确**有效性优先、请求次数与成本不设限**。设计文档 `docs/superpowers/specs/2026-10-12-conversation-model-design.md`，实施计划 `docs/superpowers/plans/2026-10-12-conversation-model-plan.md`。
+
+**已完成（第一期、第二期）：**
+
+- 提示词开始索要 `intent`、`stance_change`，并把 `event_id` 交给模型，结构化标记不再空转。
+- `replies_to` 现在能按 `event_id`、`speaker_id` 或**显示名**回指，且一律解析到**最新**一条（此前只认 id，并且取最早一条）。
+- 两条 provider 路径统一剥离 markdown 代码围栏。
+- 新增 `brainstorm/turn_planner.py`：`extend_batch` 不再按名册轮转，改由结构事实决定发言人与回应对象。
+- 五个协议介入触发条件（分歧充分交锋、重要共识、重复增加、冷场、新观点减少）在模型路径上生效，并产出主持人整理计划。
+- 控制器记录 `host_intervention_reason`；界面在**实时与历史两条渲染路径**上统一显示"回应 XXX"和介入原因（此前历史路径连 intent 都不显示）。
+
+**尚未完成（第三期、第四期）：**
+
+- 每次发言前的**模型编排调用**（判断关键问题、这条必须回答什么、附带刷新状态）与后台预取。
+- 生成后的**质检调用**（查重复、查回避、查编造），不合格回炉重写。
+- 三段式长讨论上下文（常驻段 + 状态段 + 最近 24 条）；目前仍是最近 12 条纯文本。
+- JSON 格式错误的回灌重试；当前仍是解析失败即整批回退离线。
+- `duplicate` 标记尚无代码写入（`turn_planner.detect_intervention` 已在消费它）。
+- 结束总结多遍成稿。
+
+**必须由用户验收、实施者不得代为宣称的：** 真实 DeepSeek 长讨论里"谁回应谁是否合理""讨论是否真的更有效"。单元测试只能证明调度规则与标记生效，证明不了手感。
 
 没有本文件之外的自动继续任务；以用户下一条请求为准。不要声称所有设计目标已完美实现。
