@@ -32,6 +32,8 @@ def _stamp(value: datetime | None) -> str:
 
 
 class HotspotCard(QFrame):
+    discuss_requested = Signal()
+
     def __init__(self, item: HotspotItem, parent=None) -> None:
         super().__init__(parent)
         self.item = item
@@ -96,10 +98,28 @@ class HotspotCard(QFrame):
         self.open_button.setToolTip(item.url or "来源未提供原文链接")
         self.open_button.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(item.url)))
         actions.addWidget(self.open_button)
+
+        self.discuss_button = QPushButton("就这个话题讨论")
+        self.discuss_button.setToolTip("以这条热点为题开一场九人讨论；条目本身会作为讨论线索，并保留它的来源与时间标注。")
+        self.discuss_button.clicked.connect(self.discuss_requested)
+        actions.addWidget(self.discuss_button)
         layout.addLayout(actions)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def mouseReleaseEvent(self, event) -> None:
+        """Clicking anywhere on the card starts the discussion.
+
+        Child buttons consume their own clicks, so 打开原文 and the expand button
+        keep working without also firing this.
+        """
+        if event.button() == Qt.MouseButton.LeftButton and self.rect().contains(event.position().toPoint()):
+            self.discuss_requested.emit()
+        super().mouseReleaseEvent(event)
 
 
 class HotspotSection(QWidget):
+    discuss_requested = Signal(object)
+
     def __init__(self, title: str, subtitle: str, parent=None) -> None:
         super().__init__(parent)
         layout = QVBoxLayout(self)
@@ -136,6 +156,8 @@ class HotspotSection(QWidget):
                 widget.setParent(None)
                 widget.deleteLater()
         self.cards = [HotspotCard(item, self) for item in items]
+        for card in self.cards:
+            card.discuss_requested.connect(lambda item=card.item: self.discuss_requested.emit(item))
         self.empty_label = None
         self.count.setText(f"{len(items)} 条")
         if self.cards:
@@ -168,6 +190,7 @@ class HotspotPage(QWidget):
     back_requested = Signal()
     window_mode_requested = Signal()
     exit_requested = Signal()
+    discuss_requested = Signal(str, str)
 
     def __init__(self, provider: HotspotProvider | None = None, network_allowed: bool = True, parent=None) -> None:
         super().__init__(parent)
@@ -233,6 +256,8 @@ class HotspotPage(QWidget):
         body.setSpacing(28)
         self.related_section = HotspotSection("与你的主题相关", "主题检索和标题、摘要匹配的新闻线索。")
         self.general_section = HotspotSection("社会热点广场", "公开新闻按发布时间展示；国内、国际尽量均衡，不代表热度排名。")
+        for section in (self.related_section, self.general_section):
+            section.discuss_requested.connect(self._request_discussion)
         body.addWidget(self.related_section)
         body.addWidget(self.general_section)
         body.addStretch()
@@ -261,6 +286,33 @@ class HotspotPage(QWidget):
         row.addStretch()
         root.addLayout(row)
         return buttons
+
+    @staticmethod
+    def _discussion_material(item: HotspotItem) -> tuple[str, str]:
+        """Topic plus the material block handed to the roundtable.
+
+        The provenance travels with the item: an AI-recalled entry must never
+        arrive in the discussion looking like a verified news report, because the
+        roles would then treat a two-year-old memory as today's fact.
+        """
+        topic = item.title.strip()
+        if item.source_kind == "model":
+            where = f"来自社会热点雷达的 AI 回忆条目（{item.time_note or '模型自述时间未提供'}）"
+        else:
+            stamp = _stamp(item.published_at) if item.published_at else "发布时间未提供"
+            where = f"来自社会热点雷达的真实新闻源条目（{item.publisher or '来源未标明'}，发布于 {stamp}）"
+        note = (
+            f"{where}：{topic}。"
+            f"摘要：{item.summary or '无'}。"
+            "该条目未核验，可能已经过时，只能当作讨论线索，不是已证实事实。"
+        )
+        return topic, note
+
+    def _request_discussion(self, item: HotspotItem) -> None:
+        topic, note = self._discussion_material(item)
+        if not topic:
+            return
+        self.discuss_requested.emit(topic, note)
 
     def set_context(self, topic: str, auto_refresh: bool = True) -> None:
         self.cancel_refresh()

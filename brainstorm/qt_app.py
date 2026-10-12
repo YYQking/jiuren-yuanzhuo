@@ -293,8 +293,11 @@ class LobbyPage(QWidget):
         for chip in self.role_chips:
             chip.setChecked(chip.role.id in selected)
 
+    def selected_roles(self) -> list[Role]:
+        return [chip.role for chip in self.role_chips if chip.isChecked()]
+
     def _start(self) -> None:
-        roles = [chip.role for chip in self.role_chips if chip.isChecked()]
+        roles = self.selected_roles()
         self.start_requested.emit(
             self.topic.text().strip(),
             roles,
@@ -924,6 +927,7 @@ class MainWindow(QMainWindow):
         self.summary.window_mode_requested.connect(self._toggle_window_mode)
         self.summary.exit_requested.connect(self.close)
         self.hotspots.back_requested.connect(self._back_to_lobby)
+        self.hotspots.discuss_requested.connect(self._discuss_hotspot)
         self.hotspots.window_mode_requested.connect(self._toggle_window_mode)
         self.hotspots.exit_requested.connect(self.close)
         self.showFullScreen()
@@ -932,6 +936,22 @@ class MainWindow(QMainWindow):
         self.roundtable.set_selected_roles(roles)
         self.stack.setCurrentWidget(self.roundtable)
         self.controller.start(topic, roles, source, fetch_news=fetch_news)
+
+    def _discuss_hotspot(self, topic: str, note: str) -> None:
+        """Start a discussion straight from a hotspot card.
+
+        The card's provenance travels in ``note`` so the roles cannot mistake a
+        model-recalled item for today's verified news. Roles come from the lobby's
+        current selection; if none is ticked we use all nine rather than starting
+        an empty roundtable.
+        """
+        topic = topic.strip()
+        if not topic:
+            return
+        roles = self.lobby.selected_roles() or list(DEFAULT_ROLES)
+        self.lobby.topic.setText(topic)
+        self.lobby.source.setPlainText(note)
+        self._start(topic, roles, note, fetch_news=False)
 
     def _ai_settings(self) -> None:
         dialog = AISettingsDialog(self.config, self)

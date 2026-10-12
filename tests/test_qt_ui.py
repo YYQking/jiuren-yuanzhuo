@@ -191,6 +191,81 @@ class QtUiTests(unittest.TestCase):
         finally:
             window.close()
 
+    def test_hotspot_card_can_start_a_discussion_and_keeps_its_provenance(self):
+        from brainstorm.hotspots import HotspotFetchResult, HotspotItem
+        from brainstorm.qt_app import HotspotPage
+
+        page = HotspotPage(network_allowed=False)
+        requests = []
+        page.discuss_requested.connect(lambda topic, note: requests.append((topic, note)))
+        page.set_result(HotspotFetchResult([
+            HotspotItem("AI 换脸诈骗案频发引监管关注", publisher="模型生成", region="domestic", category="科技",
+                        source_kind="model", summary="多起冒充亲友的案子被曝光。",
+                        time_note="时间：2025年1月 · 来源：来源不确定（均为模型自述，未核验）"),
+        ]))
+
+        page.general_section.cards[0].discuss_button.click()
+
+        self.assertEqual(len(requests), 1)
+        topic, note = requests[0]
+        self.assertEqual(topic, "AI 换脸诈骗案频发引监管关注")
+        # 来源与时间必须跟着材料走，否则角色会把旧回忆当成今天的新闻
+        self.assertIn("AI 回忆", note)
+        self.assertIn("2025年1月", note)
+        self.assertIn("未核验", note)
+        self.assertIn("多起冒充亲友的案子被曝光。", note)
+
+    def test_real_news_card_keeps_outlet_and_publication_time(self):
+        from datetime import datetime, timezone
+        from brainstorm.hotspots import HotspotFetchResult, HotspotItem
+        from brainstorm.qt_app import HotspotPage
+
+        page = HotspotPage(network_allowed=False)
+        requests = []
+        page.discuss_requested.connect(lambda topic, note: requests.append((topic, note)))
+        page.set_result(HotspotFetchResult([
+            HotspotItem("某地出台新政策", publisher="中新网", region="domestic", category="社会",
+                        source_kind="rss", published_at=datetime(2026, 10, 12, 9, 0, tzinfo=timezone.utc)),
+        ]))
+        page.general_section.cards[0].discuss_button.click()
+        _, note = requests[0]
+        self.assertIn("真实新闻源", note)
+        self.assertIn("中新网", note)
+        self.assertIn("2026-10-12", note)
+
+    def test_clicking_the_card_body_also_starts_the_discussion(self):
+        from PySide6.QtCore import QPoint, QPointF, Qt
+        from PySide6.QtGui import QMouseEvent
+        from brainstorm.hotspots import HotspotFetchResult, HotspotItem
+        from brainstorm.qt_app import HotspotPage
+
+        page = HotspotPage(network_allowed=False)
+        requests = []
+        page.discuss_requested.connect(lambda topic, note: requests.append(topic))
+        page.set_result(HotspotFetchResult([HotspotItem("点卡片也能开讨论")]))
+        card = page.general_section.cards[0]
+        event = QMouseEvent(QMouseEvent.Type.MouseButtonRelease, QPointF(5, 5), QPointF(5, 5),
+                            Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
+        card.mouseReleaseEvent(event)
+        self.assertEqual(requests, ["点卡片也能开讨论"])
+
+    def test_main_window_starts_a_discussion_from_a_hotspot_card(self):
+        with patch("brainstorm.qt_app.SessionStore", return_value=self.store):
+            window = MainWindow()
+        try:
+            started = []
+            window._start = lambda topic, roles, note, fetch_news=False: started.append((topic, roles, note, fetch_news))
+            window._discuss_hotspot("某热点事件", "来自社会热点雷达的 AI 回忆条目：某热点事件。")
+            self.assertEqual(len(started), 1)
+            topic, roles, note, fetch_news = started[0]
+            self.assertEqual(topic, "某热点事件")
+            self.assertIn("AI 回忆", note)
+            self.assertTrue(roles, "没有勾选角色时应当回退到全部九个，而不是开一场空圆桌")
+            self.assertFalse(fetch_news)
+            self.assertEqual(window.lobby.topic.text(), "某热点事件")
+        finally:
+            window.close()
+
     def test_main_window_keeps_cache_provider_in_offline_mode(self):
         with patch.dict("os.environ", {"BRAINSTORM_MODE": "offline"}, clear=True), patch("brainstorm.qt_app.SessionStore", return_value=self.store):
             window = MainWindow()

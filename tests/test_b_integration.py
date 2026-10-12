@@ -157,6 +157,36 @@ class BIntegrationTests(unittest.TestCase):
                     continue
                 self.assertNotIn(f"独特角色{other}: 观点", prompt)
 
+    def test_hotspot_material_reaches_the_model_prompt(self):
+        captured = []
+
+        class Event:
+            text = '{"content":"我回应这条线索"}'
+
+        class Stream:
+            def __enter__(self): return self
+            def __exit__(self, *_): return False
+            def __iter__(self): return iter([Event()])
+
+        class Messages:
+            def stream(self, **kwargs):
+                captured.append(kwargs["messages"][0]["content"])
+                return Stream()
+
+        class Client:
+            messages = Messages()
+
+        note = ("来自社会热点雷达的 AI 回忆条目（时间：2025年1月 · 来源：来源不确定，均为模型自述，未核验）："
+                "AI 换脸诈骗案频发引监管关注。摘要：多起冒充亲友的案子被曝光。"
+                "该条目未核验，可能已经过时，只能当作讨论线索，不是已证实事实。")
+        provider = AnthropicDiscussionProvider(client=Client(), model="test-model")
+        provider.discuss("AI 换脸诈骗案频发引监管关注", [Role("r", "角色", "职责", "#fff", "提示")], note)
+        prompt = captured[0]
+        self.assertIn("AI 换脸诈骗案频发引监管关注", prompt)
+        self.assertIn("2025年1月", prompt)
+        # 来源标注必须一路带到提示词里，不能被当成已核验事实
+        self.assertIn("未核验", prompt)
+
     def test_anthropic_parse_preserves_discussion_metadata(self):
         spec = TurnSpec("r", "角色", "动态交锋")
         prior = [Utterance("other", "另一角色", "原始观点", ViewpointKind.OPPORTUNITY, "首轮观点", event_id="event-000001", sequence=1)]
