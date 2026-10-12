@@ -1,0 +1,25 @@
+__pycache__/
+*.pyc
+build/
+dist/
+*.spec
+.vscode/
+
+# 本机存在多套历史构建（dist-*/build-*），合计数百 MB，不入库
+build-*/
+dist-*/
+# 本地运行时与缓存
+.qt-build-runtime/
+.pefile-runtime/
+.uv-cache/
+# 临时与备份目录
+.backup-*/
+.tmp-tests/
+tmp-session-test/
+# UI 验证截图与产物
+artifacts/
+# 运行日志
+*.log
+# 历史打包程序与旧 EXE（记忆文件已标记为历史，非当前交付版本）
+desktop-release/九人圆桌桌面版-无限讨论/
+/九人圆桌.exe
