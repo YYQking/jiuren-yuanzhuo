@@ -115,6 +115,34 @@ class TurnPlannerTests(unittest.TestCase):
         self.assertEqual(plan.speaker_id, "trend")
         self.assertEqual(plan.speaker_name, "趋势分析师")
 
+    def test_two_role_duel_does_not_lock_out_the_other_roles(self):
+        # 复现第一次真实跑测里的现象：第 15–20 轮只有两个角色互相挑战，
+        # 其余 7 个角色再也没有机会发言。
+        session = build(
+            say("trend", "趋势分析师", "我先给一个背景"),
+            say("builder", "创业实践者", "我提出一个机制", intent="support", replies_to="event-000000"),
+            say("skeptic", "怀疑者", "我不信这个机制", intent="challenge", replies_to="event-000001"),
+            say("builder", "创业实践者", "我回应你的质疑", intent="challenge", replies_to="event-000002"),
+            say("skeptic", "怀疑者", "我再反驳一次", intent="challenge", replies_to="event-000003"),
+            say("builder", "创业实践者", "我继续回应", intent="challenge", replies_to="event-000004"),
+        )
+        plan = plan_turn(session, ROLES, DiscussionState())
+        self.assertEqual(plan.speaker_id, "trend",
+                         "第三个角色必须有机会发言，不能两个人一直对轰")
+
+    def test_user_interjection_is_answered_even_in_a_lopsided_history(self):
+        session = build(
+            say("trend", "趋势分析师", "一"),
+            say("builder", "创业实践者", "二"),
+            say("user", "用户", "先讨论无障碍体验", intent="user_instruction"),
+            say("builder", "创业实践者", "三"),
+            say("skeptic", "怀疑者", "四"),
+            say("trend", "趋势分析师", "五"),
+        )
+        plan = plan_turn(session, ROLES, DiscussionState())
+        self.assertEqual(plan.reason, "你刚才插话，优先回应")
+        self.assertEqual(plan.reply_to_event_id, "event-000002")
+
     def test_repeated_content_is_marked_without_being_deleted(self):
         session = build(
             say("trend", "趋势分析师", "先做小范围试点"),

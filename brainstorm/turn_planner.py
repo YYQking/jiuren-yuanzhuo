@@ -26,6 +26,15 @@ QUESTION_WINDOW = 12
 MAX_SILENT_TURNS = 3
 MAX_CONSECUTIVE_SAME_SPEAKER = 2
 
+# A role that already holds this many of the last RECENT_WINDOW role turns is not
+# given another one.  Without this, rule 3 (who owes a reply to a challenge)
+# lets two roles trade challenges forever: every new challenge creates a fresh
+# "owed reply" that outranks the fairness rules.  In the first real 21-turn run
+# that produced six straight turns split between two roles while the other seven
+# never spoke again.
+RECENT_WINDOW = 6
+MAX_RECENT_TURNS = 2
+
 
 @dataclass(frozen=True)
 class TurnPlan:
@@ -200,7 +209,7 @@ def plan_turn(
                 speaker.id, speaker.name, "回应插话", "elaborate", "假设",
                 reply_to_event_id=interjection.event_id,
                 reason="你刚才插话，优先回应",
-            ), session, candidates)
+            ), session, candidates, protect=True)
 
     # Rule 2: a question nobody answered.
     questions = [
@@ -260,10 +269,24 @@ def plan_turn(
     ), session, candidates)
 
 
-def _guard(plan: TurnPlan, session: DiscussionSession, candidates: Sequence[Role]) -> TurnPlan:
-    """Never let one role take three turns in a row."""
-    recent = [item.speaker_id for item in _role_utterances(session)][-MAX_CONSECUTIVE_SAME_SPEAKER:]
-    if len(recent) == MAX_CONSECUTIVE_SAME_SPEAKER and all(speaker_id == plan.speaker_id for speaker_id in recent):
+def _guard(plan: TurnPlan, session: DiscussionSession, candidates: Sequence[Role],
+           *, protect: bool = False) -> TurnPlan:
+    """Keep the floor shared instead of letting one or two roles hold it.
+
+    Two invariants: a role never takes three turns in a row, and no role holds
+    more than ``MAX_RECENT_TURNS`` of the last ``RECENT_WINDOW`` turns.  The
+    second is what breaks a two-role challenge duel.
+
+    ``protect`` marks plans that must not be rotated away, currently only the
+    answer to a user interjection.
+    """
+    if protect:
+        return plan
+    recent = [item.speaker_id for item in _role_utterances(session)]
+
+    if len(recent) >= MAX_CONSECUTIVE_SAME_SPEAKER and all(
+        speaker_id == plan.speaker_id for speaker_id in recent[-MAX_CONSECUTIVE_SAME_SPEAKER:]
+    ):
         alternative = _least_spoken(candidates, session, exclude=[plan.speaker_id])
         if alternative is not None:
             return replace(
@@ -271,5 +294,17 @@ def _guard(plan: TurnPlan, session: DiscussionSession, candidates: Sequence[Role
                 speaker_id=alternative.id,
                 speaker_name=alternative.name,
                 reason=f"{plan.reason}（避免同一角色连续发言）",
+            )
+
+    window = recent[-RECENT_WINDOW:]
+    if len(window) >= RECENT_WINDOW and window.count(plan.speaker_id) >= MAX_RECENT_TURNS:
+        blocked = sorted({plan.speaker_id} | set(recent[-2:]))
+        alternative = _least_spoken(candidates, session, exclude=blocked)
+        if alternative is not None and window.count(alternative.id) < MAX_RECENT_TURNS:
+            return replace(
+                plan,
+                speaker_id=alternative.id,
+                speaker_name=alternative.name,
+                reason=f"{plan.reason}（避免少数角色占满发言）",
             )
     return plan
