@@ -48,6 +48,31 @@ from .session_controller import SessionController
 from .storage import SessionStore
 
 
+# 发言类型来自模型输出的分类，读者不一定看得懂「假设」「待验证」指什么，
+# 所以在发言卡片上直接用一句人话解释，而不是让人去猜或去翻说明。
+KIND_IN_PLAIN_WORDS = {
+    ViewpointKind.FACT.value: "已经确认的情况",
+    ViewpointKind.ASSUMPTION.value: "还没证据的推测",
+    ViewpointKind.OPPORTUNITY.value: "值得做的方向",
+    ViewpointKind.RISK.value: "担心会出问题的地方",
+    ViewpointKind.VALIDATION.value: "需要去证实的",
+    ViewpointKind.SUMMARY.value: "阶段性归纳",
+}
+
+
+def kind_label(kind: ViewpointKind | str) -> str:
+    """Render one viewpoint kind as `假设（还没证据的推测）`."""
+    value = kind.value if isinstance(kind, ViewpointKind) else str(kind)
+    gloss = KIND_IN_PLAIN_WORDS.get(value)
+    return f"{value}（{gloss}）" if gloss else value
+
+
+def kind_legend() -> str:
+    lines = ["这一条是什么类型（由模型自己判断，可能不准）："]
+    lines.extend(f"· {value}：{gloss}" for value, gloss in KIND_IN_PLAIN_WORDS.items())
+    return "\n".join(lines)
+
+
 class RoleChip(QPushButton):
     def __init__(self, role: Role, parent=None) -> None:
         super().__init__(parent)
@@ -450,10 +475,12 @@ class RoundtablePage(QWidget):
         self.bubble.setStyleSheet(f"background: #1a2d24; border: 2px solid {COLORS['gold']}; border-radius: 18px; padding: 18px 22px; color: {COLORS['cream']}; font-size: 18px; line-height: 1.5;")
         root.addWidget(self.bubble)
         bottom = QHBoxLayout()
-        self.subtitle = QLabel("当前发言将在这里显示")
-        self.subtitle.setWordWrap(True)
-        self.subtitle.setStyleSheet(f"color: {COLORS['cream']}; font-size: 16px; line-height: 1.5;")
-        bottom.addWidget(self.subtitle, 1)
+        # This row exists to host the interjection box.  It used to repeat the
+        # whole current utterance, so the same text appeared twice on screen.
+        self.interjection_hint = QLabel("插话会作为你的意见记录，并在下一批发言中得到回应")
+        self.interjection_hint.setWordWrap(True)
+        self.interjection_hint.setStyleSheet(f"color: {COLORS['muted']}; font-size: 13px; line-height: 1.4;")
+        bottom.addWidget(self.interjection_hint, 1)
         self.interjection = QLineEdit()
         self.interjection.setPlaceholderText("插话给主持人……")
         self.interjection.returnPressed.connect(self._send_interjection)
@@ -467,7 +494,9 @@ class RoundtablePage(QWidget):
         self.drawer.setObjectName("recordDrawer")
         self.drawer.setStyleSheet("QFrame#recordDrawer { background: #14221d; border: 1px solid #526a59; border-radius: 14px; }")
         drawer_layout = QVBoxLayout(self.drawer)
-        drawer_layout.addWidget(QLabel("完整讨论记录"))
+        drawer_title = QLabel("完整讨论记录")
+        drawer_title.setToolTip(kind_legend())
+        drawer_layout.addWidget(drawer_title)
         self.evidence = QTextEdit()
         self.evidence.setReadOnly(True)
         self.evidence.setMaximumHeight(210)
@@ -567,7 +596,7 @@ class RoundtablePage(QWidget):
         else:
             self.integration_label.setText(message)
             self.phase_label.setText("正在获取新闻素材")
-            self.bubble.setText("正在查找与主题相关的新闻标题和摘要……\n新闻获取结束后开始讨论，来源和观点将分别标明。")
+            self._set_bubble("正在查找与主题相关的新闻标题和摘要……\n新闻获取结束后开始讨论，来源和观点将分别标明。")
 
     def _news_finished(self, _result) -> None:
         if self.session is not None:
@@ -582,7 +611,7 @@ class RoundtablePage(QWidget):
         self.finish_button.setEnabled(not running and self.controller.playback.state.value != "completed")
         if state == "running":
             self.phase_label.setText("正在生成讨论…")
-            self.bubble.setText("圆桌成员正在准备观点……")
+            self._set_bubble("圆桌成员正在准备观点……")
         elif state == "continuing":
             self.phase_label.setText("正在延展讨论…")
         elif state == "cancelling":
@@ -638,6 +667,12 @@ class RoundtablePage(QWidget):
         self._show_current_text(utterance)
         self.transcript.append(self._transcript_line(utterance))
 
+    def _set_bubble(self, text: str, tooltip: str = "") -> None:
+        """Write the current-turn card. The kind legend belongs only to a turn,
+        so status messages must not inherit the tooltip from the previous one."""
+        self.bubble.setText(text)
+        self.bubble.setToolTip(tooltip)
+
     def _show_current_text(self, utterance: Utterance) -> None:
         compact = getattr(self, "_compact", False)
         source = self.session.utterance_source(utterance) if self.session else "未标记来源"
@@ -645,9 +680,7 @@ class RoundtablePage(QWidget):
         if compact and len(content) > 140:
             content = content[:140] + "…（全文见记录）"
         labels = f"{self._reply_label(utterance)}{self._intervention_label(utterance)}"
-        self.bubble.setText(f"{utterance.speaker_name}  ·  {utterance.kind.value}{labels}  ·  {source}\n{content}")
-        self.subtitle.setText(f"{utterance.speaker_name} · {utterance.phase}" if compact else utterance.content)
-        self.subtitle.setToolTip(utterance.content)
+        self._set_bubble(f"{utterance.speaker_name}  ·  {kind_label(utterance.kind)}{labels}  ·  {source}\n{content}", kind_legend())
 
     def _state(self, state: str) -> None:
         self.pause_button.setText("继续" if state == "paused" else "暂停")
@@ -662,7 +695,7 @@ class RoundtablePage(QWidget):
             card = session.opportunity
             support = card.support[0] if card.support else "当前还没有支持性观点"
             risk = card.risks[0] if card.risks else "当前还没有风险观点"
-            self.bubble.setText(f"讨论已结束 · {card.title}\n目标用户：{card.audience}\n\n支持：{support}\n风险：{risk}\n\n完整内容已进入总结页。")
+            self._set_bubble(f"讨论已结束 · {card.title}\n目标用户：{card.audience}\n\n支持：{support}\n风险：{risk}\n\n完整内容已进入总结页。")
         self.summary_requested.emit(session)
 
     def _send_interjection(self) -> None:
@@ -672,7 +705,7 @@ class RoundtablePage(QWidget):
             self.interjection.clear()
 
     def _interjection(self, text: str) -> None:
-        self.bubble.setText(f"用户插话 · 已记录\n{text}\n已加入下一批回应队列，仍需核验。")
+        self._set_bubble(f"用户插话 · 已记录\n{text}\n已加入下一批回应队列，仍需核验。")
 
     def _discussion_state_changed(self, state) -> None:
         consensus = "；".join(state.consensus[:2]) or "暂无"

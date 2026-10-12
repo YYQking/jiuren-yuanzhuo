@@ -197,6 +197,18 @@ class BIntegrationTests(unittest.TestCase):
         self.assertEqual(utterance.stance_change.after, "先做小范围试点")
         self.assertEqual(utterance.verification, "unverified")
 
+    def test_unknown_kind_falls_back_to_the_kind_the_plan_asked_for(self):
+        """A moderator summary must not be relabelled 假设 just because the model
+        answered with a kind word we do not know."""
+        spec = TurnSpec("moderator", "主持人", "阶段总结", "总结")
+        utterance, _ = AnthropicDiscussionProvider._parse('{"content":"本轮归纳","kind":"总结性发言"}', spec, [])
+        self.assertEqual(utterance.kind, ViewpointKind.SUMMARY)
+
+    def test_unknown_kind_without_a_usable_hint_lands_on_assumption(self):
+        spec = TurnSpec("r", "角色", "动态交锋", "模型乱写的类型")
+        utterance, _ = AnthropicDiscussionProvider._parse('{"content":"我的看法","kind":"不存在"}', spec, [])
+        self.assertEqual(utterance.kind, ViewpointKind.ASSUMPTION)
+
     def test_prompt_requests_intent_stance_and_event_ids(self):
         captured = []
 

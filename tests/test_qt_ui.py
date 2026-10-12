@@ -80,6 +80,34 @@ class QtUiTests(unittest.TestCase):
         page._generation_partial("行业从业者", '{"content":"下一条"}')
         self.assertEqual(page.bubble.text(), "我正在阅读的观点")
 
+    def test_current_utterance_is_displayed_once(self):
+        """The bottom row is a hint for the interjection box, not a second copy."""
+        page = RoundtablePage(self.controller)
+        utterance = Utterance("industry", "行业从业者", "这是一条完整的观点内容", ViewpointKind.RISK, "独立观点")
+        page._show_current_text(utterance)
+        self.assertIn("这是一条完整的观点内容", page.bubble.text())
+        self.assertNotIn("这是一条完整的观点内容", page.interjection_hint.text())
+        self.assertIn("插话", page.interjection_hint.text())
+        self.assertEqual(page.interjection_hint.toolTip(), "")
+
+    def test_viewpoint_kind_is_explained_in_plain_language(self):
+        page = RoundtablePage(self.controller)
+        page._show_current_text(Utterance("moderator", "主持人", "阶段归纳内容", ViewpointKind.ASSUMPTION, "阶段总结"))
+        self.assertIn("假设", page.bubble.text())
+        self.assertIn("还没证据的推测", page.bubble.text())
+        self.assertIn("这一条是什么类型", page.bubble.toolTip())
+        for kind in ("机会", "风险", "待验证", "总结"):
+            self.assertIn(kind, page.bubble.toolTip())
+
+    def test_status_message_does_not_keep_the_kind_legend(self):
+        """The legend explains a turn; it must not linger over status text."""
+        page = RoundtablePage(self.controller)
+        page._show_current_text(Utterance("industry", "行业从业者", "观点", ViewpointKind.RISK, "独立观点"))
+        self.assertIn("这一条是什么类型", page.bubble.toolTip())
+        page._generation_state("running")
+        self.assertEqual(page.bubble.toolTip(), "")
+        self.assertIn("正在准备", page.bubble.text())
+
     def test_hotspot_page_separates_related_and_general_and_filters_region(self):
         from brainstorm.hotspots import HotspotFetchResult, HotspotItem
         from brainstorm.qt_app import HotspotPage

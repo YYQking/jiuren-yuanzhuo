@@ -60,6 +60,23 @@ class TurnSpec:
     final: bool = False
 
 
+def _viewpoint_kind(value: object, hint: str = "") -> ViewpointKind:
+    """Map the model's kind word to a known kind, else to the planned one.
+
+    A model answering with a word we do not know used to be relabelled 假设, so
+    the moderator's closing summary showed up as "主持人 · 假设" on screen.  The
+    local plan already knows what this turn is; use it before guessing.
+    """
+    for candidate in (value, hint):
+        if isinstance(candidate, ViewpointKind):
+            return candidate
+        try:
+            return ViewpointKind(str(candidate))
+        except ValueError:
+            continue
+    return ViewpointKind.ASSUMPTION
+
+
 @dataclass(frozen=True)
 class Usage:
     input_tokens: int = 0
@@ -546,11 +563,7 @@ class AnthropicDiscussionProvider:
         content = data.get("content")
         if not isinstance(content, str) or not content.strip() or len(content) > 4000:
             raise ProviderFailure("invalid_schema", "真实模型缺少有效发言内容；已回退到离线模拟")
-        kind_value = data.get("kind", spec.kind_hint)
-        try:
-            kind = ViewpointKind(kind_value)
-        except ValueError:
-            kind = ViewpointKind.ASSUMPTION
+        kind = _viewpoint_kind(data.get("kind", spec.kind_hint), spec.kind_hint)
         if kind == ViewpointKind.FACT:
             kind = ViewpointKind.VALIDATION
         replies_to = data.get("replies_to")
