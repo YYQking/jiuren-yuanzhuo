@@ -344,11 +344,23 @@ class AnthropicDiscussionProvider:
         if kind == ViewpointKind.FACT:
             kind = ViewpointKind.VALIDATION
         replies_to = data.get("replies_to")
-        prior_ids = {item.speaker_id for item in history} | {item.event_id for item in history}
-        if not isinstance(replies_to, str) or replies_to not in prior_ids:
+        if not isinstance(replies_to, str) or not replies_to.strip():
             replies_to = None
         else:
-            replies_to = next((item.event_id for item in history if item.event_id == replies_to or item.speaker_id == replies_to), replies_to)
+            # Accept an event id, a speaker id, or the display name the prompt
+            # actually shows the model. Always resolve to the LATEST match so a
+            # role that has spoken repeatedly is not pinned to its first turn.
+            reference = replies_to.strip()
+            replies_to = next(
+                (
+                    item.event_id
+                    for item in reversed(history)
+                    if item.event_id == reference
+                    or item.speaker_id == reference
+                    or item.speaker_name == reference
+                ),
+                None,
+            )
         intent = data.get("intent", "initial")
         if intent not in {"initial", "support", "challenge", "question", "elaborate", "synthesize"}:
             intent = "initial"

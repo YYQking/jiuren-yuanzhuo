@@ -109,6 +109,29 @@ class BIntegrationTests(unittest.TestCase):
         utterance, _ = AnthropicDiscussionProvider._parse(payload, spec, prior)
         self.assertEqual(utterance.replies_to, "event-000001")
 
+    def test_speaker_reply_reference_resolves_to_latest_utterance(self):
+        spec = TurnSpec("r", "角色", "动态交锋")
+        prior = [
+            Utterance("other", "另一角色", "第一次发言", ViewpointKind.OPPORTUNITY, "独立观点", event_id="event-000001", sequence=1),
+            Utterance("other", "另一角色", "第二次发言", ViewpointKind.RISK, "动态交锋", event_id="event-000002", sequence=2),
+        ]
+        # 人名回指（提示词就是这样引导模型的）必须落到最新一条，而不是最早一条
+        by_name, _ = AnthropicDiscussionProvider._parse(
+            '{"content":"回应","replies_to":"另一角色","intent":"challenge"}', spec, prior)
+        self.assertEqual(by_name.replies_to, "event-000002")
+        # speaker_id 回指同样落到最新一条
+        by_id, _ = AnthropicDiscussionProvider._parse(
+            '{"content":"回应","replies_to":"other","intent":"challenge"}', spec, prior)
+        self.assertEqual(by_id.replies_to, "event-000002")
+        # event_id 精确回指不受"取最新"影响
+        by_event, _ = AnthropicDiscussionProvider._parse(
+            '{"content":"回应","replies_to":"event-000001","intent":"challenge"}', spec, prior)
+        self.assertEqual(by_event.replies_to, "event-000001")
+        # 前文不存在的引用一律置空，不能凭空指向
+        unknown, _ = AnthropicDiscussionProvider._parse(
+            '{"content":"回应","replies_to":"前文没有的人","intent":"challenge"}', spec, prior)
+        self.assertIsNone(unknown.replies_to)
+
     def test_anthropic_extend_batch_prompt_contains_state_and_user_instruction(self):
         captured = []
         class Event:
