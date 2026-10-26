@@ -36,6 +36,11 @@ class Role:
     duty: str
     color: str
     prompt: str
+    # Only the event-discussion seats carry trigram material; the business seats
+    # leave these empty so their prompts stay exactly as they were.
+    trigram: str = ""
+    yang: str = ""
+    yin: str = ""
 
 
 @dataclass(frozen=True)
@@ -89,6 +94,9 @@ class Utterance:
     # Set when the quality review sent this turn back for one rewrite, so the
     # record shows that the review ran instead of hiding it.
     review_note: str = ""
+    # Event section only: which side of the five-element/trigram pair is showing.
+    # ``yang`` / ``yin`` / "" (unknown, treat as whatever the speaker showed last).
+    face: str = ""
 
 
 @dataclass
@@ -111,6 +119,9 @@ class DiscussionSession:
     opportunity: Optional[OpportunityCard] = None
     created_at: datetime = field(default_factory=datetime.now)
     selected_role_ids: list[str] = field(default_factory=list)
+    # "business" (nine occupational seats) or "event" (eight trigram people).
+    # Old archives have no such key and must keep reading as business.
+    mode: str = "business"
     # provider_mode is retained for v1/v2 compatibility.  It describes the
     # effective discussion provider, not merely what the user requested.
     provider_mode: str = "offline"
@@ -207,7 +218,11 @@ class DiscussionSession:
     def viewpoint_source_description(self) -> str:
         """Explain how role language was produced without presenting inference as news."""
         origins = {self.utterance_source(item) for item in self.utterances if item.speaker_id != "user"}
-        lines = ["九个角色代表不同职责视角，并非九个独立的真实 AI。"]
+        if self.mode == "event":
+            lines = ["八个席位是同一模型扮演的八种说话方式，并非八个独立的真实 AI。"]
+            lines.append("席位性格来自八卦的传统引申（说卦传的性与类象），不是心理学测评，也不能拿来判断真人。")
+        else:
+            lines = ["九个角色代表不同职责视角，并非九个独立的真实 AI。"]
         if "模型生成" in origins:
             lines.append("模型发言由同一模型服务按角色职责、提示词、主题、前文、用户插话和提供的素材生成。")
         if "离线模拟" in origins or not origins:

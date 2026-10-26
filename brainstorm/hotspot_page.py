@@ -100,7 +100,7 @@ class HotspotCard(QFrame):
         actions.addWidget(self.open_button)
 
         self.discuss_button = QPushButton("就这个话题讨论")
-        self.discuss_button.setToolTip("以这条热点为题开一场九人讨论；条目本身会作为讨论线索，并保留它的来源与时间标注。")
+        self.discuss_button.setToolTip("以这条热点为题开一场讨论（进入事件讨论分区）；条目本身会作为讨论线索，并保留它的来源与时间标注。")
         self.discuss_button.clicked.connect(self.discuss_requested)
         actions.addWidget(self.discuss_button)
         layout.addLayout(actions)
@@ -263,7 +263,7 @@ class HotspotPage(QWidget):
         body.addStretch()
         self.scroll.setWidget(content)
         root.addWidget(self.scroll, 1)
-        footer = _plain_label("条目由模型凭记忆生成，没有实时新闻能力；每条的时间与来源均为模型自述、未核验，可能已经过时。九人观点由角色模板或已配置的模型生成，与热点条目分别展示。")
+        footer = _plain_label("条目由模型凭记忆生成，没有实时新闻能力；每条的时间与来源均为模型自述、未核验，可能已经过时。桌上观点由角色模板或已配置的模型生成，与热点条目分别展示。")
         footer.setStyleSheet(f"color: {COLORS['dim']}; font-size: 11px;")
         root.addWidget(footer)
 

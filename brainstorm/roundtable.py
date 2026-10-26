@@ -53,6 +53,22 @@ class RoundtableCanvas(QWidget):
         self.selected_ids = role_ids
         self.update()
 
+    def set_roles(self, roles: list[Role]) -> None:
+        """Swap the seat roster when the section changes.
+
+        The business section seats nine occupations, the event section seats the
+        eight trigrams; the orbit radius and avatar set both depend on the roster,
+        so a section change has to rebuild them instead of reusing nine seats.
+        """
+        self.roles = list(roles)
+        self.selected_ids = {role.id for role in self.roles}
+        self.active_id = None
+        self._avatar_renderers = {
+            role.id: QSvgRenderer(str(self._avatar_dir / f"{role.id}.svg"))
+            for role in self.roles
+        }
+        self.update()
+
     def paintEvent(self, _event) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)

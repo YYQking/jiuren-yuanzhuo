@@ -6,6 +6,8 @@
 
 这是中文 Windows 桌面头脑风暴软件：用户输入主题，九个固定社会/职业视角讨论，主持人负责开题和整理，用户手动结束后打开总结与机会档案。
 
+2026-10-26 起有两个分区，大厅角色面板右上角切换，不新开窗口：**商业痛点**（原九个职业视角，产出机会档案）与**事件讨论**（八个八卦性格的人，产出吃瓜纪要）。两套席位互不相干，App 名仍是「九人圆桌」。
+
 项目根目录：`C:\Users\14726\Desktop\头脑风暴`。
 
 技术栈：Python、PySide6/Qt、自绘圆桌与内置 SVG 头像、JSON 本地存储、Markdown/JSON 导出、PyInstaller 文件夹式打包。
@@ -103,7 +105,19 @@
 
 ## 7. 最近一次缺陷与修复（不得回归）
 
-用户反馈：发言气泡出现内部 JSON，且未看完就自动换下一条。
+### 7.1 阴阳面的翻面必须由程序决定（2026-10-26，事件分区）
+
+用户要求事件分区的人有"阴阳两面"。第一版把翻面交给模型（提示词让模型填 `face`），真实跑测 19 条发言 **全是阳面**——模型从不主动要求翻面，于是"两面"只是设定里的装饰。
+
+修复：`resolve_face`（`brainstorm/llm.py:85`）由程序拥有规则。座位首次开口阳面；此后每次回来，只要距自己上一条发言已过 `FACE_COOLDOWN = 3` 条，就翻到另一面；冷却期内保持原面。模型的 `face` 字段不再能冻结某一个面。`brainstorm/engine.py` 的 `_face_after`（第 17 行）离线模式本来就是同一套交替规则，两条路径现在一致。
+
+提示词同步改成"这一条你在X面（阳面：…／阴面：…）"并给出该面的原文描述，让模型的语气和分配到的面对齐，且不解释"为什么变脸"。
+
+同批修复：主持人不再带面（`llm.py` 解析处 `spec.speaker_id != "moderator"` 才给 face）；真实跑测第 13/20 条主持人曾被标成阴/阳面。
+
+证据：`artifacts/real-event-3` 共 20 条发言—10 条阳面、7 条阴面、3 条主持人无面；天哥第 10 条由阳转阴、地姐第 11 条转阴、第 15 条转回阳。回归测试 `tests/test_event_section.py::FaceFlipTests` 三条（先红后绿）与 `test_offline_event_discussion_keeps_both_faces_in_play`。
+
+### 7.2 发言气泡出现内部 JSON，且未看完就自动换下一条
 
 已查明根因：
 
@@ -128,7 +142,7 @@
 | brainstorm/roundtable.py、qt_theme.py | 自绘圆桌、视觉主题 |
 | brainstorm/session_controller.py | 后台线程、取消、续批、播放、插话与结束 |
 | brainstorm/playback.py | 不依赖 Qt 的播放状态机 |
-| brainstorm/roles.py、models.py | 固定角色与讨论数据模型 |
+| brainstorm/roles.py、models.py | 两套席位与讨论数据模型：`DEFAULT_ROLES`（商业痛点九个职业视角，原样不动）、`EVENT_ROLES`（事件讨论八个八卦人设，`_seat()` 把卦名／阳面／阴面写进 prompt，并带"传统引申不是心理学"的免责句）；`ROLES_BY_MODE`、`SECTION_TEXT`、`mode_for_roles`、`default_roles_for`、`face_label` |
 | brainstorm/engine.py | 离线讨论、状态分析与整理 |
 | brainstorm/turn_planner.py | 本地结构调度：谁被反驳未回、哪个提问没人答、谁久未发言、是否该主持人介入。**只做结构判断，不做语义相关性判断**；输出供模型编排层使用，也是模型不可用时的兜底 |
 | brainstorm/llm.py | 模型请求、上下文、JSON 解析、usage、重试 |

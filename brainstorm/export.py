@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from .models import DiscussionSession
+from .roles import SECTION_TEXT, face_label
 from .storage import session_to_dict
 
 
@@ -60,11 +61,24 @@ def export_markdown(session: DiscussionSession, path: Path) -> Path:
         intent = f" · 回应意图：{item.intent}" if item.intent else ""
         reply = f" · 回应事件：{item.replies_to}" if item.replies_to else ""
         stance = f" · 改变立场：{item.stance_change.before} → {item.stance_change.after}" if item.stance_change else ""
-        lines.extend([f"### {item.speaker_name} · {item.phase} · {item.kind.value}{intent}{reply}{stance} · {session.utterance_source(item)}", item.content, ""])
+        face = f" · {face_label(item.face)}" if item.face else ""
+        lines.extend([f"### {item.speaker_name}{face} · {item.phase} · {item.kind.value}{intent}{reply}{stance} · {session.utterance_source(item)}", item.content, ""])
+    text = SECTION_TEXT.get(session.mode, SECTION_TEXT["business"])
     if session.opportunity:
         card = session.opportunity
-        lines.extend(["## 机会档案", "", f"**机会方向：** {card.title}", f"**目标用户：** {card.audience}", ""])
-        for title, values in (("支持理由", card.support), ("主要风险", card.risks), ("待验证假设", card.assumptions), ("建议下一步", card.next_steps)):
+        lines.extend([
+            f"## {text['archive_title']}",
+            "",
+            f"**{text['field_title']}：** {card.title}",
+            f"**{text['field_audience']}：** {card.audience}",
+            "",
+        ])
+        for title, values in (
+            (text["label_support"], card.support),
+            (text["label_risks"], card.risks),
+            (text["label_assumptions"], card.assumptions),
+            (text["label_next_steps"], card.next_steps),
+        ):
             lines.extend([f"### {title}", *[f"- {value}" for value in values], ""])
         lines.extend([f"**观点分布：** {card.stance_counts}", ""])
     state = session.discussion_state

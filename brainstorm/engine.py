@@ -6,6 +6,27 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from .models import DiscussionSession, OpportunityCard, Participation, Role, StanceChange, TrendSource, Utterance, ViewpointKind
+from .roles import mode_for_roles
+
+
+# The event section lets a seat flip between its 阳面 and 阴面, but not on every
+# turn -- otherwise the flip stops meaning anything.
+FACE_COOLDOWN = 3
+
+
+def _face_after(history: Sequence[Utterance], speaker_id: str) -> str:
+    """The face a seat should show next in an offline event discussion.
+
+    A seat opens on its 阳面, then alternates, but only once ``FACE_COOLDOWN``
+    utterances have passed since its previous turn.
+    """
+    indices = [index for index, item in enumerate(history) if item.speaker_id == speaker_id]
+    if not indices:
+        return "yang"
+    if len(history) - 1 - indices[-1] < FACE_COOLDOWN:
+        return history[indices[-1]].face or "yang"
+    return "yin" if (history[indices[-1]].face or "yang") == "yang" else "yang"
+
 
 
 class DiscussionProvider(Protocol):
@@ -24,7 +45,8 @@ class MockDiscussionProvider:
         if not selected:
             raise ValueError("至少选择一位参与者。")
 
-        session = DiscussionSession(topic=topic.strip(), selected_role_ids=[role.id for role in selected])
+        session = DiscussionSession(topic=topic.strip(), selected_role_ids=[role.id for role in selected],
+                                   mode=mode_for_roles(selected))
         if source_note.strip():
             session.source = TrendSource(title="用户提供的前沿线索", note=source_note.strip(), source_type="user")
             session.sources.append(session.source)
@@ -32,6 +54,9 @@ class MockDiscussionProvider:
             if (item.title.casefold(), item.url.casefold()) not in {(source.title.casefold(), source.url.casefold()) for source in session.sources}:
                 session.sources.append(item)
                 session.source = session.source or item
+        if session.mode == "event":
+            self._event_opening(session, selected)
+            return session
         by_id = {role.id: role for role in selected}
         active = [role for role in selected]
 
@@ -84,6 +109,132 @@ class MockDiscussionProvider:
         session.phase = "首轮观点"
         return session
 
+    _EVENT_INTENT = {
+        ViewpointKind.RISK: "challenge",
+        ViewpointKind.VALIDATION: "question",
+        ViewpointKind.OPPORTUNITY: "elaborate",
+        ViewpointKind.ASSUMPTION: "elaborate",
+        ViewpointKind.FACT: "elaborate",
+        ViewpointKind.SUMMARY: "synthesize",
+    }
+
+    def _event_opening(self, session: DiscussionSession, selected: Sequence[Role]) -> None:
+        """Offline event opening: many voices, a visible flip, honest ignorance.
+
+        Nothing here claims a real source.  Offline mode has to show the *shape*
+        of the conversation -- several people talking over each other, a seat
+        turning its 阴面, speakers saying plainly what they do not know -- and
+        must never invent news.
+        """
+        topic = session.topic
+        self._add(
+            session, "moderator", "主持人",
+            f"今天聊一件事：“{topic}”。桌上八个人，谁也不是当事人。"
+            "规矩先讲清楚：我确定的就说“我知道”，听来的就说“听说”，瞎猜的就说“我猜”。"
+            "（离线演示，下面这些话没有真实来源）",
+            ViewpointKind.SUMMARY, "开题",
+        )
+        if session.source is not None:
+            material = session.source.note or session.source.title
+            self._add(
+                session, "moderator", "主持人",
+                f"桌上还有份材料：“{material[:200]}”。当它是线索，别当它是真相。",
+                ViewpointKind.ASSUMPTION, "开题",
+            )
+        openers = {
+            "qian": (ViewpointKind.OPPORTUNITY, "开头我先给个态度：“{topic}”这事不是小事，别急着站队。我知道的就是公开那几条，听说的比知道的多。真要出事，多半出在没人愿意先开口的那一环。"),
+            "kun": (ViewpointKind.ASSUMPTION, "我不爱把话说死。听说的情况是：当事人身边的人都不好受，可谁也不想先出头。要我说，先把人照顾好，再论谁对谁错。"),
+            "zhen": (ViewpointKind.RISK, "我一听就来气。“{topic}”要是真像传的那样，那就不是小事。不过话我先说在前面：我这是听说，别拿它当实锤再往外传。"),
+            "xun": (ViewpointKind.ASSUMPTION, "我这儿版本多一点，可我不敢打包票。有说这样的，有说那样的，两个说法差得挺远。我猜中间还有一段没人讲。"),
+            "kan": (ViewpointKind.VALIDATION, "先泼盆冷水。现在桌上说的，一半是猜的。真要判断，得看时间、看谁先说的、看有没有第二个人能对上。"),
+            "li": (ViewpointKind.OPPORTUNITY, "我站当事人那边说一句：不管最后怎么定性，被人这么议论本身就够伤的。"),
+            "gen": (ViewpointKind.VALIDATION, "我不太掺和。就一句：没核实的事，别往外传。"),
+            "dui": (ViewpointKind.ASSUMPTION, "这事要让我讲，能讲成段子。但段子归段子，我其实知道得不多，听说的居多。"),
+        }
+        for role in selected:
+            kind, text = openers.get(
+                role.id,
+                (ViewpointKind.ASSUMPTION, "对“{topic}”这事，我知道的不多，只能说说听来的那部分。"),
+            )
+            self._add(session, role.id, role.name, text.format(topic=topic), kind, "各自开口")
+        by_id = {role.id: role for role in selected}
+        # Half these exchanges land on a seat's 阳面 and half on its 阴面, so the
+        # offline demo shows both sides of the eight tempers instead of a room
+        # full of people already at their worst.
+        exchanges = [
+            ("kun", ViewpointKind.ASSUMPTION, "yang", "我说句软话：不管最后怎么说，现在就有人吃不下睡不着。先把人顾住，再论对错。", None),
+            ("qian", ViewpointKind.SUMMARY, "yang", "我拍个板：在有人拿出第二份说法之前，谁也别替当事人定性。传出去就说是桌上瞎聊的。", "kun"),
+            ("gen", ViewpointKind.VALIDATION, "yang", "我就一句：没核实的事别往外传。你们吵归吵，这条别破。", "qian"),
+            ("zhen", ViewpointKind.RISK, "yin", "我刚听说一版特别难听的，越听越来气——当然我没证实，谁证实了跟我说一声。", "gen"),
+            ("kan", ViewpointKind.RISK, "yin", "你要我说，最坏的那种可能还没人提。真走到那一步，今天在这儿替人说话的一个都跑不掉。", "zhen"),
+            ("li", ViewpointKind.RISK, "yin", "刚才是谁说我想多了？行，那我就不客气了。", "kan"),
+            ("dui", ViewpointKind.ASSUMPTION, "yin", "我补一句：传得最快的那版，恰恰是没人核过的那版。", "li"),
+        ]
+        recent_reply = ""
+        for seat, kind, face, text, reply_to in exchanges:
+            role = by_id.get(seat)
+            if role is None:
+                continue
+            added = self._add_face(
+                session, role.id, role.name, text, kind, "各说各话", face,
+                reply_to or recent_reply or None,
+            )
+            recent_reply = added.event_id
+        self._add(
+            session, "moderator", "主持人",
+            "先停一下。有人先护着人说话，也有人已经往最坏处想了。"
+            "现在能确认的没几条，谁也别说自己手里是实锤。",
+            ViewpointKind.SUMMARY, "阶段整理",
+        )
+        session.opportunity = OpportunityCard(
+            title=f"“{topic}”到底算什么",
+            audience="当事人（化名）和围着这件事说话的人（离线演示）",
+            support=["（离线演示）大家嘴上认的那部分事实，其实没几个人说得清"],
+            risks=["几个版本互相打架，谁也没有第二个人能对上", "吵到后面已经从事情本身吵到人的品行"],
+            assumptions=["传得最凶的那一版还没人证实", "当事人到现在没有公开回应"],
+            next_steps=["等一个能对上时间的公开说法", "看当事人或相关方会不会回应"],
+            stance_counts={},
+        )
+        session.phase = "首轮观点"
+
+    def _event_extend(self, session: DiscussionSession, batch_index: int) -> list[Utterance]:
+        seats: list[tuple[str, str]] = []
+        seen: set[str] = set()
+        for item in session.utterances:
+            if item.speaker_id in {"moderator", "user"} or item.speaker_id in seen:
+                continue
+            seen.add(item.speaker_id)
+            seats.append((item.speaker_id, item.speaker_name))
+        if not seats:
+            return []
+        index = max(1, batch_index) - 1
+        seats = seats[(index * 2) % len(seats):] + seats[:(index * 2) % len(seats)]
+        pool = [
+            (ViewpointKind.ASSUMPTION, "接着聊", "我这边又听到一个新说法，跟前面那个对不上。我不敢保证，但这条要是真的，前面的判断就得改。"),
+            (ViewpointKind.RISK, "互怼", "我就是不信这么快就有结论。谁先说的？谁证明的？说不出来就别急着站队。"),
+            (ViewpointKind.VALIDATION, "追问", "先别急着骂人。把时间捋一遍：什么时候、谁在场、谁说给谁的；对不上就先搁着。"),
+            (ViewpointKind.OPPORTUNITY, "转向", "我倒是觉得，这事最后怎么收场，比谁对谁错更值得看。"),
+            (ViewpointKind.ASSUMPTION, "翻旧账", "我记得前面有人拍过胸脯保证过什么，现在这个说法一出来，那句话还算数吗？"),
+            (ViewpointKind.SUMMARY, "收一收", "先归拢一下：现在能对上的只有一条，剩下的都还是听说的。"),
+            (ViewpointKind.RISK, "换个角度", "就算这事最后证明是真的，我也想知道：是谁先把它捅出来的，图什么。"),
+            (ViewpointKind.VALIDATION, "留个尾巴", "我只有一句：别今天吵完就散了，过两天有新说法，记得回来对一遍。"),
+        ]
+        added: list[Utterance] = []
+        previous_id = ""
+        for offset, (speaker_id, speaker_name) in enumerate(seats):
+            kind, phase, text = pool[(offset + index) % len(pool)]
+            face = _face_after(session.utterances, speaker_id)
+            item = self._add_face(
+                session, speaker_id, speaker_name, text, kind, phase, face,
+                previous_id or None,
+            )
+            previous_id = item.event_id
+            added.append(item)
+        self._refresh_opportunity(session)
+        session.rebuild_state()
+        session.phase = "各说各话"
+        return added
+
     def extend(self, session: DiscussionSession, batch_index: int = 1) -> list[Utterance]:
         """Append another conversational batch to an existing live session.
 
@@ -95,6 +246,8 @@ class MockDiscussionProvider:
         """
         if not session.topic.strip():
             raise ValueError("请输入一个讨论主题。")
+        if session.mode == "event":
+            return self._event_extend(session, batch_index)
         state = self.analyze_state(session)
         participants: list[tuple[str, str]] = []
         seen: set[str] = set()
@@ -253,5 +406,14 @@ class MockDiscussionProvider:
         session.opportunity.next_steps = validation or ["先明确目标人群并安排访谈，核对讨论中的前提", "对比现有替代方案，制作单一场景原型进行验证"]
 
     @staticmethod
-    def _add(session: DiscussionSession, speaker_id: str, speaker_name: str, content: str, kind: ViewpointKind, phase: str, replies_to: str | None = None) -> None:
-        session.append_utterance(Utterance(speaker_id, speaker_name, content, kind, phase, replies_to, origin="offline"))
+    def _add(session: DiscussionSession, speaker_id: str, speaker_name: str, content: str, kind: ViewpointKind, phase: str, replies_to: str | None = None) -> Utterance:
+        return session.append_utterance(Utterance(speaker_id, speaker_name, content, kind, phase, replies_to, origin="offline"))
+
+    @classmethod
+    def _add_face(cls, session: DiscussionSession, speaker_id: str, speaker_name: str, content: str,
+                  kind: ViewpointKind, phase: str, face: str, replies_to: str | None = None) -> Utterance:
+        """An offline event turn, carrying the face it was spoken in."""
+        return session.append_utterance(Utterance(
+            speaker_id, speaker_name, content, kind, phase, replies_to,
+            origin="offline", face=face, intent=cls._EVENT_INTENT.get(kind, "elaborate"),
+        ))

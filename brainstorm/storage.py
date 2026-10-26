@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from .models import DiscussionSession, DiscussionState, OpportunityCard, StanceChange, TrendSource, Utterance, ViewpointKind
+from .roles import MODE_LABELS, mode_for_roles
 
 SCHEMA_VERSION = 6
 
@@ -68,6 +69,7 @@ def session_to_dict(session: DiscussionSession) -> dict[str, Any]:
         "usage_output_tokens": session.usage_output_tokens,
         "usage_requests": session.usage_requests,
         "selected_role_ids": session.selected_role_ids,
+        "mode": session.mode,
         "phase": session.phase,
         "run_state": session.run_state,
         "discussion_state": {
@@ -93,6 +95,7 @@ def session_to_dict(session: DiscussionSession) -> dict[str, Any]:
                 "simulated": item.simulated,
                 "origin": item.origin,
                 "event_id": item.event_id,
+                "face": item.face,
                 "sequence": item.sequence,
                 "intent": item.intent,
                 "verification": item.verification,
@@ -169,6 +172,7 @@ def session_from_dict(data: dict[str, Any]) -> DiscussionSession:
                 simulated=bool(item.get("simulated", True)),
                 origin=str(item.get("origin", "")),
                 event_id=str(item.get("event_id", "") or f"event-{sequence:06d}"),
+                face=str(item.get("face", "")),
                 sequence=int(item.get("sequence", sequence)),
                 intent=str(item.get("intent", "initial")),
                 verification=str(item.get("verification", "unverified")),
@@ -197,14 +201,19 @@ def session_from_dict(data: dict[str, Any]) -> DiscussionSession:
     except (TypeError, ValueError) as exc:
         raise ValueError("invalid created_at") from exc
     selected = data.get("selected_role_ids", [])
-    return DiscussionSession(
+    selected_ids = [str(item) for item in selected] if isinstance(selected, list) else []
+    stored_mode = str(data.get("mode", "") or "")
+    if stored_mode not in MODE_LABELS:
+        # Pre-mode archives: an event session is the one whose seats are trigrams.
+        stored_mode = mode_for_roles(selected_ids) if selected_ids else "business"
+    return DiscussionSession(mode=stored_mode,
         topic=topic,
         source=source,
         sources=sources,
         utterances=utterances,
         opportunity=opportunity,
         created_at=created_at,
-        selected_role_ids=[str(item) for item in selected] if isinstance(selected, list) else [],
+        selected_role_ids=selected_ids,
         provider_mode=str(data.get("provider_mode", "offline")),
         fallback_reason=str(data.get("fallback_reason", "")),
         request_mode=str(data.get("request_mode", data.get("provider_mode", "offline"))),

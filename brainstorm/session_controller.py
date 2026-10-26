@@ -13,6 +13,7 @@ from .models import DiscussionSession, Role, TrendSource, Utterance, ViewpointKi
 from .news import NewsFetchResult, NewsProvider, OfflineNewsProvider
 from .playback import DiscussionPlayback, PlaybackState
 from .providers import IntegrationStatus
+from .roles import mode_for_roles
 from .storage import SessionStore
 from .turn_planner import detect_intervention, mark_duplicates
 
@@ -249,6 +250,7 @@ class SessionController(QObject):
             sources=sources,
             source=sources[0] if sources else None,
             selected_role_ids=[role.id for role in roles],
+            mode=mode_for_roles(roles),
         )
 
     def _generation_turn(self, utterance: Utterance, done: int, total: int, token: int) -> None:

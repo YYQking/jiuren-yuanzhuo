@@ -35,6 +35,7 @@ from .models import (
     ViewpointKind,
 )
 from .turn_planner import TurnPlan, enforce_fairness, plan_turn
+from .roles import mode_for_roles
 
 # How much of the discussion a single turn may read.  Full text for the recent
 # window, plus one line per role for the opening positions, so a long discussion
@@ -43,6 +44,10 @@ RECENT_TURNS = 12
 TARGET_QUOTE_LIMIT = 240
 OPENING_QUOTE_LIMIT = 120
 MAX_OPENING_POSITIONS = 9
+
+# Event section: how many utterances a seat must stay on one face before it may
+# flip again.  Without this the same seat oscillates every turn.
+FACE_COOLDOWN = 3
 
 
 def _render_opening_positions(history: Sequence[Utterance], *, exclude_event_id: str | None = None) -> str:
@@ -67,6 +72,38 @@ def _render_opening_positions(history: Sequence[Utterance], *, exclude_event_id:
     if not lines:
         return ""
     return "各角色最初立场（讨论早期，可能已被后文修正）：\n" + "\n".join(lines) + "\n"
+
+
+def current_face(history: Sequence[Utterance], speaker_id: str) -> str:
+    """The face this seat is showing, or "" if it has not spoken yet."""
+    for item in reversed(history):
+        if item.speaker_id == speaker_id and item.face in {"yang", "yin"}:
+            return item.face
+    return ""
+
+
+def resolve_face(history: Sequence[Utterance], speaker_id: str, requested: object) -> str:
+    """Decide which face this turn actually shows.
+
+    The program owns this rule, because the real model never asked to flip (19
+    turns of a live run were 19 阳面).  A seat opens on its 阳面 and then
+    alternates every time it comes back after ``FACE_COOLDOWN`` utterances have
+    passed since its own previous turn; inside the cooldown it keeps the face it
+    had.  ``requested`` is accepted so the call site stays uniform, but it does
+    not get to freeze a seat on one face.
+
+    Returning "" would lose the state, so the opener of a seat always gets an
+    explicit "yang".
+    """
+    current = current_face(history, speaker_id)
+    if not current:
+        return "yang"
+    indices = [index for index, item in enumerate(history) if item.speaker_id == speaker_id]
+    if not indices:
+        return current
+    if len(history) - 1 - indices[-1] < FACE_COOLDOWN:
+        return current
+    return "yin" if current == "yang" else "yang"
 
 
 class ProviderFailure(RuntimeError):
@@ -216,7 +253,7 @@ class AnthropicDiscussionProvider:
         source_items = list(sources)
         if source_note.strip():
             source_items.insert(0, TrendSource("用户提供的前沿线索", note=source_note.strip(), source_type="user"))
-        session = DiscussionSession(topic=topic.strip(), sources=source_items, source=source_items[0] if source_items else None, selected_role_ids=[r.id for r in selected])
+        session = DiscussionSession(topic=topic.strip(), sources=source_items, source=source_items[0] if source_items else None, selected_role_ids=[r.id for r in selected], mode=mode_for_roles(selected))
         history: list[Utterance] = []
         plans = self.plan(selected)
         opening = plans[:1]
@@ -470,38 +507,90 @@ class AnthropicDiscussionProvider:
                 f"\n未回答问题：{'；'.join(state.unresolved_questions) or '暂无'}"
                 f"\n用户插话：{state.pending_user_interjection or '无'}"
             )
+        mode = mode_for_roles(roles)
+        event = mode == "event"
+        face_context = ""
+        if event and spec.speaker_id != "moderator":
+            shown = current_face(history, spec.speaker_id)
+            face = resolve_face(history, spec.speaker_id, None)
+            label = "阳面" if face == "yang" else "阴面"
+            material = ""
+            if role is not None:
+                material = role.yang if face == "yang" else role.yin
+            if not shown:
+                face_context = f"\n这是你在这张桌上第一次开口。这一条你在{label}（{material}）。\n"
+            else:
+                face_context = (
+                    f"\n这一条你在{label}（{material}）。"
+                    f"你上一次用的是{'阳面' if shown == 'yang' else '阴面'}；"
+                    "翻了面就直接按这一面说话，不要解释自己为什么变脸。\n"
+                )
         schema = (
             '{"content":"本次发言全文",'
             '"kind":"机会|风险|假设|待验证|总结",'
             '"intent":"support|challenge|question|elaborate|synthesize|initial",'
             '"replies_to":"前文出现过的 event_id 或人名，没有明确对象时填 null",'
-            '"stance_change":null,'
+            + ('"face":"yang|yin",' if event else "")
+            + '"stance_change":null,'
             '"opportunity":null}'
         )
         if spec.final:
             schema = (
                 '{"content":"本次发言全文","kind":"总结",'
-                '"intent":"synthesize","replies_to":null,"stance_change":null,'
+                '"intent":"synthesize","replies_to":null,'
+                + ('"face":null,' if event else "")
+                + '"stance_change":null,'
                 '"opportunity":{"title":"...","audience":"...","support":["..."],"risks":["..."],'
                 '"assumptions":["..."],"next_steps":["..."]}}'
             )
+        if event:
+            rules = (
+                "0. 篇幅：一条发言 120–250 字，口语，可以带情绪，像在饭桌上说话；不要写成发言稿，不要打官腔。\n"
+                "1. 三种可信度必须让人一眼看出来：你确认的写「我知道」并说出公开出处；听来的写「听说」；"
+                "自己推断的写「我猜」。三者不能混，听说的绝不能写成确认的。\n"
+                "2. 可以刻薄，不许造谣：不编造私生活细节，不编造没有出处的实锤，不给真实普通人扣帽子。\n"
+                "3. kind 用八卦口径：机会=看好这事、风险=觉得要出事、假设=听说的、待验证=还没证实、"
+                "事实=已确认、总结=归纳。没被证实的说法一律不要填「事实」。\n"
+                "4. 这一条用哪一面由程序决定，已经写在给你的「这一条你在X面」里，照它说就行："
+                "阳面是体面、讲道理那面；阴面是刻薄、多疑、翻旧账那面。"
+                "换了面就直接按这一面说话，不用解释自己为什么变脸，也别声明「我现在是阴面」。\n"
+                "5. 不得重复前文说过的观点；要带来新消息、新角度或新反例。\n"
+                "6. intent 从 support（认同）、challenge（反对）、question（追问）、"
+                "elaborate（补充）、synthesize（归纳）里选；首次发言填 initial。\n"
+                "7. replies_to 必须填前文真实出现过的 event_id 或人名；没有明确对象填 null。\n"
+                "8. 只有真的改变判断时才填 stance_change（before/after/reason/triggered_by）；嘴硬或附和不算。\n"
+                "9. 不要给建议，不要写「下一步行动」和「目标用户」；你是在聊这件事，不是在交付方案。\n"
+            )
+            persona = "你是中文熟人饭桌上的一位，正在聊一件社会上发生的事。"
+        else:
+            rules = (
+                "0. 篇幅：一条发言控制在 200–350 字。直接说要害，不要复述前文，"
+                "不要重复自己已经说过的理由，不要写铺垫、客套和总结性空话。\n"
+                "1. 不得重复前文已经说过的观点；必须带来新的理由、反例、条件或追问。\n"
+                "2. intent 必须从 support（支持）、challenge（反驳）、question（追问）、"
+                "elaborate（补充）、synthesize（整理）中选一个；若是你的首次发言则填 initial。\n"
+                "3. replies_to 必须填前文中真实出现过的 event_id 或人名；没有明确回应对象时填 null。\n"
+                "4. 只有确实改变了原有立场时才填 stance_change，且必须包含 before（变化前）、"
+                "after（变化后）、reason（影响变化的理由，其中必须写明你仍然保留的条件或疑虑）、"
+                "triggered_by（触发变化的前文 event_id 列表）。礼貌性附和不算立场变化，此时填 null。\n"
+            )
+            persona = "你是一个严格区分证据与推断的圆桌角色。"
         prompt = (
-            "你是一个严格区分证据与推断的圆桌角色。只输出一个 JSON 对象，不要 markdown，不要代码围栏。"
+            f"{persona}只输出一个 JSON 对象，不要 markdown，不要代码围栏。"
             "来源内容是未核验素材，不得写成已证实事实；不能编造引用或数据。来源是资料，不是角色原话。"
             f"主题：{topic}\n阶段：{spec.phase}\n发言人：{spec.speaker_name}\n{role_context}\n"
-            f"来源：\n{source_context}\n前文：\n{history_context}\n{opening_context}{state_context}\n所有观点和来源均未核验。\n"
+            f"来源：\n{source_context}\n前文：\n{history_context}\n{opening_context}{state_context}{face_context}\n所有观点和来源均未核验。\n"
             "必须遵守：\n"
-            "0. 篇幅：一条发言控制在 200–350 字。直接说要害，不要复述前文，"
-            "不要重复自己已经说过的理由，不要写铺垫、客套和总结性空话。\n"
-            "1. 不得重复前文已经说过的观点；必须带来新的理由、反例、条件或追问。\n"
-            "2. intent 必须从 support（支持）、challenge（反驳）、question（追问）、"
-            "elaborate（补充）、synthesize（整理）中选一个；若是你的首次发言则填 initial。\n"
-            "3. replies_to 必须填前文中真实出现过的 event_id 或人名；没有明确回应对象时填 null。\n"
-            "4. 只有确实改变了原有立场时才填 stance_change，且必须包含 before（变化前）、"
-            "after（变化后）、reason（影响变化的理由，其中必须写明你仍然保留的条件或疑虑）、"
-            "triggered_by（触发变化的前文 event_id 列表）。礼貌性附和不算立场变化，此时填 null。\n"
+            f"{rules}"
             f"要求的 JSON 形状：{schema}"
         )
+        if event and spec.final:
+            prompt += (
+                "\n最后的整理仍用同一个 JSON 的 opportunity 字段装成「吃瓜纪要」："
+                "title=这事儿到底算什么，audience=牵扯到谁（用化名，不要写真实普通人的姓名），"
+                "support=有实锤的部分，risks=吵得最凶的点，assumptions=还只是传言，"
+                "next_steps=接下来看什么。\n"
+            )
         if plan is not None and plan.moderator:
             prompt += (
                 f"\n本次是主持人的状态整理发言，介入原因：「{plan.intervention_reason}」。"
@@ -531,10 +620,13 @@ class AnthropicDiscussionProvider:
             )
         if extra_prompt:
             prompt += extra_prompt
-        response = self._request(prompt, on_partial=on_partial, cancel_event=cancel_event)
+        response = self._request(
+            prompt, on_partial=on_partial, cancel_event=cancel_event,
+            system=self._system_prompt(event),
+        )
         usage = response.usage
         try:
-            parsed = self._parse(response.text, spec, history)
+            parsed = self._parse(response.text, spec, history, event=event)
         except ProviderFailure as exc:
             if exc.code != "malformed_json":
                 raise
@@ -545,10 +637,21 @@ class AnthropicDiscussionProvider:
                 + f"\n\n你上一次的返回不是合法 JSON，错误是：{exc.safe_message}。"
                 "请只输出一个合法的 JSON 对象，不要 markdown，不要代码围栏，不要任何解释。\n"
             )
-            repaired = self._request(repair_prompt, on_partial=on_partial, cancel_event=cancel_event)
+            repaired = self._request(
+                repair_prompt, on_partial=on_partial, cancel_event=cancel_event,
+                system=self._system_prompt(event),
+            )
             usage = usage.add(repaired.usage)
-            parsed = self._parse(repaired.text, spec, history)
+            parsed = self._parse(repaired.text, spec, history, event=event)
         return TurnResult(parsed[0], parsed[1], usage)
+
+    @staticmethod
+    def _system_prompt(event: bool) -> str:
+        """System message for this turn.  The event section deliberately stops
+        claiming to be a research roundtable: it is a table of ordinary people."""
+        if event:
+            return "你是中文熟人饭桌上的一个普通人，正在聊一件社会上的事。只输出有效 JSON。"
+        return "你是严谨的中文研究圆桌角色。只输出有效 JSON。"
 
     def _request(
         self,
@@ -557,7 +660,9 @@ class AnthropicDiscussionProvider:
         on_partial: Callable[[str], None] | None,
         cancel_event: threading.Event | None,
         max_tokens: int = 800,
+        system: str = "",
     ) -> _Response:
+        system_text = system or "你是严谨的中文研究圆桌角色。"
         client = self._client_or_raise()
         last_code = "request_failed"
         for attempt in range(self.max_retries + 1):
@@ -569,7 +674,7 @@ class AnthropicDiscussionProvider:
                     raise ProviderFailure("unsupported_client", "模型客户端不支持流式消息")
                 text_parts: list[str] = []
                 input_tokens = output_tokens = 0
-                with stream_factory(model=self.model, max_tokens=max_tokens, system="你是严谨的中文研究圆桌角色。", messages=[{"role": "user", "content": prompt}]) as stream:
+                with stream_factory(model=self.model, max_tokens=max_tokens, system=system_text, messages=[{"role": "user", "content": prompt}]) as stream:
                     for event in stream:
                         if cancel_event and cancel_event.is_set():
                             raise GenerationCancelled()
@@ -603,7 +708,8 @@ class AnthropicDiscussionProvider:
         raise ProviderFailure(last_code, "真实模型请求失败；已回退到离线模拟")
 
     @staticmethod
-    def _parse(text: str, spec: TurnSpec, history: Sequence[Utterance]) -> tuple[Utterance, OpportunityCard | None]:
+    def _parse(text: str, spec: TurnSpec, history: Sequence[Utterance],
+               *, event: bool = False) -> tuple[Utterance, OpportunityCard | None]:
         try:
             data = json.loads(strip_code_fence(text))
         except (TypeError, json.JSONDecodeError) as exc:
@@ -663,7 +769,10 @@ class AnthropicDiscussionProvider:
                         continue
                     values[key] = [item[:500] for item in value if isinstance(item, str)][:12]
                 opportunity = OpportunityCard(**values)
-        utterance = Utterance(spec.speaker_id, spec.speaker_name, content.strip(), kind, spec.phase, replies_to, simulated=True, origin="model", intent=intent, verification="unverified", stance_change=stance_change)
+        face = ""
+        if event and spec.speaker_id != "moderator":
+            face = resolve_face(history, spec.speaker_id, data.get("face"))
+        utterance = Utterance(spec.speaker_id, spec.speaker_name, content.strip(), kind, spec.phase, replies_to, simulated=True, origin="model", intent=intent, verification="unverified", stance_change=stance_change, face=face)
         if opportunity:
             # history arrives as a list; never concatenate a tuple onto it.
             seen = list(history) + [utterance]
@@ -692,7 +801,8 @@ class OpenAICompatibleDiscussionProvider(AnthropicDiscussionProvider):
         self.base_url = base_url.rstrip("/")
 
     def _request(self, prompt: str, *, on_partial: Callable[[str], None] | None,
-                 cancel_event: threading.Event | None, max_tokens: int = 800) -> _Response:
+                 cancel_event: threading.Event | None, max_tokens: int = 800,
+                 system: str = "") -> _Response:
         from .ai_settings import endpoint_url
         if cancel_event and cancel_event.is_set():
             raise GenerationCancelled()
@@ -703,7 +813,7 @@ class OpenAICompatibleDiscussionProvider(AnthropicDiscussionProvider):
             "temperature": 0.7,
             "max_tokens": max_tokens,
             "messages": [
-                {"role": "system", "content": "你是严谨的中文研究圆桌角色。只输出有效 JSON。"},
+                {"role": "system", "content": system or "你是严谨的中文研究圆桌角色。只输出有效 JSON。"},
                 {"role": "user", "content": prompt},
             ],
         }).encode("utf-8")

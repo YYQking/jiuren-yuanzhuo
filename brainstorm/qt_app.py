@@ -42,7 +42,7 @@ from .hotspots import HotspotCache, HotspotProvider, default_hotspot_feeds
 from .model_hotspots import HybridHotspotProvider, ModelHotspotProvider
 from .providers import resolve_providers
 from .qt_theme import COLORS, app_stylesheet, title_font
-from .roles import DEFAULT_ROLES
+from .roles import DEFAULT_ROLES, ROLES_BY_MODE, SECTION_TEXT, default_roles_for, face_label
 from .roundtable import RoundtableCanvas
 from .session_controller import SessionController
 from .storage import SessionStore
@@ -129,7 +129,11 @@ class LobbyPage(QWidget):
         super().__init__(parent)
         self.store = store
         self.role_chips: list[RoleChip] = []
+        self.mode = "business"
+        self._mode_chips: dict[str, list[RoleChip]] = {}
+        self._role_grids: dict[str, QGridLayout] = {}
         self._build()
+        self.set_mode("business")
 
     def _build(self) -> None:
         self.setObjectName("lobbyPage")
@@ -157,7 +161,8 @@ class LobbyPage(QWidget):
         top.addWidget(self.exit_button)
         outer.addLayout(top)
 
-        intro = QLabel("把一个问题放上桌，让九种社会视角彼此回应，再把冲突收敛成可验证的机会。")
+        intro = QLabel(SECTION_TEXT["business"]["intro"])
+        self.intro = intro
         intro.setWordWrap(True)
         intro.setStyleSheet(f"color: {COLORS['muted']}; font-size: 15px;")
         outer.addWidget(intro)
@@ -168,20 +173,20 @@ class LobbyPage(QWidget):
         left = QVBoxLayout()
         self.input_layout = left
         left.setSpacing(12)
-        prompt = QLabel("今天要讨论什么？")
+        prompt = QLabel(SECTION_TEXT["business"]["topic_prompt"])
         self.topic_prompt = prompt
         prompt.setFont(title_font(22))
         left.addWidget(prompt)
         self.topic = QLineEdit()
-        self.topic.setPlaceholderText("例如：社区里的银发人群如何更容易使用数字服务？")
+        self.topic.setPlaceholderText(SECTION_TEXT["business"]["topic_placeholder"])
         self.topic.setMinimumHeight(52)
         left.addWidget(self.topic)
         self.source = QTextEdit()
-        self.source.setPlaceholderText("可选：粘贴一条前沿消息、政策、论文或趋势线索（仅作为未核验素材）")
+        self.source.setPlaceholderText(SECTION_TEXT["business"]["source_placeholder"])
         self.source.setFixedHeight(110)
         left.addWidget(self.source)
         self.rss_opt_in = QCheckBox("允许本次讨论获取 RSS 前沿信息")
-        self.rss_opt_in.setToolTip("开始讨论时获取公开新闻源的标题与摘要；关闭后本次不获取新闻。联网素材与九人观点分开标记。")
+        self.rss_opt_in.setToolTip("开始讨论时获取公开新闻源的标题与摘要；关闭后本次不获取新闻。联网素材与桌上观点分开标记。")
         self.rss_opt_in.setChecked(False)
         self.rss_opt_in.setEnabled(False)
         left.addWidget(self.rss_opt_in)
@@ -193,13 +198,13 @@ class LobbyPage(QWidget):
         self._refresh_network_option()
         actions = QHBoxLayout()
         actions.setSpacing(8)
-        start = QPushButton("进入圆桌  →")
-        start.setProperty("primary", True)
-        start.clicked.connect(self._start)
-        actions.addWidget(start)
-        example = QPushButton("填入示例")
-        example.clicked.connect(lambda: self.topic.setText("小城市年轻人为什么越来越愿意为短途体验付费？"))
-        actions.addWidget(example)
+        self.start_button = QPushButton(SECTION_TEXT["business"]["start_button"])
+        self.start_button.setProperty("primary", True)
+        self.start_button.clicked.connect(self._start)
+        actions.addWidget(self.start_button)
+        self.example_button = QPushButton("填入示例")
+        self.example_button.clicked.connect(lambda: self.topic.setText(SECTION_TEXT[self.mode]["example_topic"]))
+        actions.addWidget(self.example_button)
         left.addLayout(actions)
         secondary_actions = QHBoxLayout()
         secondary_actions.setSpacing(8)
@@ -223,23 +228,44 @@ class LobbyPage(QWidget):
         right.setStyleSheet("QFrame#rolePanel { background: #16251f; border: 1px solid #334d40; border-radius: 18px; }")
         role_layout = QVBoxLayout(right)
         role_layout.setContentsMargins(20, 18, 20, 18)
-        role_layout.addWidget(QLabel("选择今晚入席的角色"))
-        role_content = QWidget()
-        role_grid = QGridLayout(role_content)
-        self.role_grid = role_grid
+        role_header = QHBoxLayout()
+        role_header.setSpacing(6)
+        self.role_title = QLabel(SECTION_TEXT["business"]["role_title"])
+        self.role_title.setStyleSheet(f"color: {COLORS['muted']}; font-size: 13px;")
+        role_header.addWidget(self.role_title)
+        role_header.addStretch()
+        self.mode_buttons: dict[str, QPushButton] = {}
+        for key in ("business", "event"):
+            button = QPushButton(SECTION_TEXT[key]["short"])
+            button.setCheckable(True)
+            button.setMinimumHeight(28)
+            button.clicked.connect(lambda _checked=False, target=key: self.set_mode(target))
+            self.mode_buttons[key] = button
+            role_header.addWidget(button)
+        role_layout.addLayout(role_header)
+        self.role_stack = QStackedWidget()
+        for key, roster in ROLES_BY_MODE.items():
+            page = QWidget()
+            grid = QGridLayout(page)
+            grid.setContentsMargins(0, 0, 4, 0)
+            grid.setHorizontalSpacing(10)
+            grid.setVerticalSpacing(8)
+            chips: list[RoleChip] = []
+            for index, role in enumerate(roster):
+                chip = RoleChip(role)
+                chips.append(chip)
+                grid.addWidget(chip, index // 2, index % 2)
+            self._mode_chips[key] = chips
+            self._role_grids[key] = grid
+            self.role_stack.addWidget(page)
         self._role_columns = 2
-        role_grid.setContentsMargins(0, 0, 4, 0)
-        role_grid.setHorizontalSpacing(10)
-        role_grid.setVerticalSpacing(8)
-        for index, role in enumerate(DEFAULT_ROLES):
-            chip = RoleChip(role)
-            self.role_chips.append(chip)
-            role_grid.addWidget(chip, index // 2, index % 2)
+        self.role_grid = self._role_grids["business"]
+        self.role_chips = self._mode_chips["business"]
         role_scroll = QScrollArea()
         role_scroll.setWidgetResizable(True)
         role_scroll.setFrameShape(QFrame.Shape.NoFrame)
         role_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        role_scroll.setWidget(role_content)
+        role_scroll.setWidget(self.role_stack)
         role_layout.addWidget(role_scroll, 1)
         role_buttons = QHBoxLayout()
         all_button = QPushButton("全选")
@@ -257,7 +283,8 @@ class LobbyPage(QWidget):
         main.addWidget(right, 6)
         outer.addLayout(main, 1)
 
-        note = QLabel("主持人负责开场、收敛与机会档案，不占九个席位。所有讨论内容均为模拟观点，不等于真实市场事实。")
+        note = QLabel(SECTION_TEXT["business"]["note"])
+        self.bottom_note = note
         note.setWordWrap(True)
         note.setStyleSheet(f"color: {COLORS['dim']};")
         outer.addWidget(note)
@@ -278,10 +305,8 @@ class LobbyPage(QWidget):
         self.source.setFixedHeight(64 if self.height() < 550 else (78 if compact else 110))
         columns = 1 if self.width() < 900 else 2
         if columns != self._role_columns:
-            for index, chip in enumerate(self.role_chips):
-                self.role_grid.removeWidget(chip)
-                self.role_grid.addWidget(chip, index // columns, index % columns)
             self._role_columns = columns
+            self._relayout_chips()
         self.role_panel.setMinimumWidth(250 if columns == 1 else 390)
         for chip in self.role_chips:
             chip.setMinimumHeight(64 if compact else 72)
@@ -314,9 +339,40 @@ class LobbyPage(QWidget):
         self.source_badge.setToolTip(text + "；获取新闻与真实模型讨论是两项独立能力。")
 
     def _quick(self) -> None:
-        selected = {"trend", "need", "builder", "skeptic"}
+        selected = (
+            {"trend", "need", "builder", "skeptic"}
+            if self.mode == "business"
+            else {"qian", "li", "kan", "dui"}
+        )
         for chip in self.role_chips:
             chip.setChecked(chip.role.id in selected)
+
+    def _relayout_chips(self) -> None:
+        columns = self._role_columns
+        for index, chip in enumerate(self.role_chips):
+            self.role_grid.removeWidget(chip)
+            self.role_grid.addWidget(chip, index // columns, index % columns)
+
+    def set_mode(self, mode: str) -> None:
+        """Switch the lobby between the business section and the event section."""
+        if mode not in ROLES_BY_MODE:
+            mode = "business"
+        self.mode = mode
+        text = SECTION_TEXT[mode]
+        self.role_stack.setCurrentIndex(list(ROLES_BY_MODE).index(mode))
+        self.role_grid = self._role_grids[mode]
+        self.role_chips = self._mode_chips[mode]
+        for key, button in self.mode_buttons.items():
+            button.setChecked(key == mode)
+        self.role_title.setText(text["role_title"])
+        self.intro.setText(text["intro"])
+        self.topic_prompt.setText(text["topic_prompt"])
+        self.topic.setPlaceholderText(text["topic_placeholder"])
+        self.source.setPlaceholderText(text["source_placeholder"])
+        self.bottom_note.setText(text["note"])
+        self.start_button.setText(text["start_button"])
+        self._relayout_chips()
+        self.updateGeometry()
 
     def selected_roles(self) -> list[Role]:
         return [chip.role for chip in self.role_chips if chip.isChecked()]
@@ -537,13 +593,20 @@ class RoundtablePage(QWidget):
 
     def set_selected_roles(self, roles: list[Role]) -> None:
         self._selected_role_ids = {role.id for role in roles}
+        if roles:
+            self.canvas.set_roles(roles)
         self.canvas.set_selected(self._selected_role_ids)
 
     def load_session(self, session: DiscussionSession) -> None:
+        self.canvas.set_roles(default_roles_for(session.mode))
         if session.selected_role_ids:
             self._selected_role_ids = set(session.selected_role_ids)
             self.canvas.set_selected(self._selected_role_ids)
         self.controller.load(session)
+
+    def _section_text(self) -> dict[str, str]:
+        mode = self.session.mode if self.session is not None else "business"
+        return SECTION_TEXT.get(mode, SECTION_TEXT["business"])
 
     def _session_ready(self, session: DiscussionSession) -> None:
         self.session = session
@@ -575,7 +638,7 @@ class RoundtablePage(QWidget):
         )
 
     def _show_evidence(self, session: DiscussionSession) -> None:
-        explanation = "九人观点从哪里来？\n" + session.viewpoint_source_description + "\n"
+        explanation = "桌上观点从哪里来？\n" + session.viewpoint_source_description + "\n"
         if not session.sources:
             self.evidence.setPlainText(explanation + f"\n无外部来源；{session.content_label}。\n{session.status_message}")
             return
@@ -658,8 +721,9 @@ class RoundtablePage(QWidget):
         source = self.session.utterance_source(utterance) if self.session else "未标记来源"
         intent = f" · {utterance.intent}" if utterance.intent and utterance.intent != "initial" else ""
         stance = " · 改变立场" if utterance.stance_change else ""
+        face = f"（{face_label(utterance.face)}）" if utterance.face else ""
         return (
-            f"【{utterance.phase}】 {utterance.speaker_name} · {utterance.kind.value}"
+            f"【{utterance.phase}】 {utterance.speaker_name}{face} · {utterance.kind.value}"
             f"{intent}{stance}{self._reply_label(utterance)}{self._intervention_label(utterance)} · {source}"
             f"{self._review_label(utterance)}"
             f"\n{utterance.content}"
@@ -687,7 +751,8 @@ class RoundtablePage(QWidget):
         if compact and len(content) > 140:
             content = content[:140] + "…（全文见记录）"
         labels = f"{self._reply_label(utterance)}{self._intervention_label(utterance)}"
-        self._set_bubble(f"{utterance.speaker_name}  ·  {kind_label(utterance.kind)}{labels}  ·  {source}\n{content}", kind_legend())
+        face = f"（{face_label(utterance.face)}）" if utterance.face else ""
+        self._set_bubble(f"{utterance.speaker_name}{face}  ·  {kind_label(utterance.kind)}{labels}  ·  {source}\n{content}", kind_legend())
 
     def _state(self, state: str) -> None:
         self.pause_button.setText("继续" if state == "paused" else "暂停")
@@ -695,14 +760,19 @@ class RoundtablePage(QWidget):
         self.next_button.setEnabled(state != "completed")
         self.finish_button.setEnabled(state != "completed")
         if state == "completed":
-            self.canvas.set_state(status="讨论完成，可查看机会档案", active_id=None)
+            self.canvas.set_state(status=f"讨论完成，可查看{self._section_text()['archive_title']}", active_id=None)
 
     def _completed(self, session: DiscussionSession) -> None:
         if session.opportunity:
             card = session.opportunity
             support = card.support[0] if card.support else "当前还没有支持性观点"
             risk = card.risks[0] if card.risks else "当前还没有风险观点"
-            self._set_bubble(f"讨论已结束 · {card.title}\n目标用户：{card.audience}\n\n支持：{support}\n风险：{risk}\n\n完整内容已进入总结页。")
+            text = SECTION_TEXT.get(session.mode, SECTION_TEXT["business"])
+            self._set_bubble(
+                f"讨论已结束 · {card.title}\n{text['field_audience']}：{card.audience}\n\n"
+                f"{text['label_support']}：{support}\n{text['label_risks']}：{risk}\n\n"
+                f"完整内容已进入{text['archive_title']}。"
+            )
         self.summary_requested.emit(session)
 
     def _send_interjection(self) -> None:
@@ -715,10 +785,15 @@ class RoundtablePage(QWidget):
         self._set_bubble(f"用户插话 · 已记录\n{text}\n已加入下一批回应队列，仍需核验。")
 
     def _discussion_state_changed(self, state) -> None:
+        text = self._section_text()
         consensus = "；".join(state.consensus[:2]) or "暂无"
         conflicts = "；".join(state.conflicts[:2]) or "暂无"
         questions = "；".join(state.unresolved_questions[:2]) or "暂无"
-        self.discussion_state_label.setText(f"共识：{consensus}\n分歧：{conflicts}\n未回答：{questions}")
+        self.discussion_state_label.setText(
+            f"{text['label_consensus']}：{consensus}\n"
+            f"{text['label_conflict']}：{conflicts}\n"
+            f"{text['label_unresolved']}：{questions}"
+        )
 
     def _phase_changed(self, phase: str) -> None:
         if phase:
@@ -843,19 +918,21 @@ class SummaryPage(QWidget):
             if item.widget() is not None:
                 item.widget().deleteLater()
         card = session.opportunity
+        text = SECTION_TEXT.get(session.mode, SECTION_TEXT["business"])
+        self.title_label.setText(text["archive_title"])
         self.summary_meta.setText(
             f"{session.topic}  ·  共 {len(session.utterances)} 条发言  ·  "
             f"{session.content_label}"
         )
         if card is None:
-            self._add_section("讨论状态", "本次讨论没有生成机会档案。请返回圆桌继续讨论，或重新开始。")
+            self._add_section("讨论状态", f"本次讨论没有生成{text['archive_title']}。请返回圆桌继续讨论，或重新开始。")
             return
-        self._add_section("机会方向", card.title, emphasized=True)
-        self._add_section("目标用户", card.audience)
-        self._add_list_section("支持理由", card.support)
-        self._add_list_section("主要风险", card.risks)
-        self._add_list_section("待验证假设", card.assumptions)
-        self._add_list_section("下一步行动", card.next_steps)
+        self._add_section(text["field_title"], card.title, emphasized=True)
+        self._add_section(text["field_audience"], card.audience)
+        self._add_list_section(text["label_support"], card.support)
+        self._add_list_section(text["label_risks"], card.risks)
+        self._add_list_section(text["label_assumptions"], card.assumptions)
+        self._add_list_section(text["label_next_steps"], card.next_steps)
         state = session.discussion_state
         self._add_list_section("当前共识", state.consensus)
         self._add_list_section("未解决分歧", state.conflicts)
@@ -873,7 +950,7 @@ class SummaryPage(QWidget):
             f"状态：{session.status_message or '无额外状态'}\n"
             "所有角色观点、RSS 素材和模型输出都需要在真实调研中继续核验。",
         )
-        self._add_section("九人观点从哪里来？", session.viewpoint_source_description)
+        self._add_section("桌上观点从哪里来？", session.viewpoint_source_description)
         self.content_layout.addStretch()
 
     def _add_section(self, title: str, body: str, *, emphasized: bool = False) -> None:
@@ -980,15 +1057,18 @@ class MainWindow(QMainWindow):
     def _discuss_hotspot(self, topic: str, note: str) -> None:
         """Start a discussion straight from a hotspot card.
 
-        The card's provenance travels in ``note`` so the roles cannot mistake a
-        model-recalled item for today's verified news. Roles come from the lobby's
-        current selection; if none is ticked we use all nine rather than starting
-        an empty roundtable.
+        The card's provenance travels in ``note`` so the seats cannot mistake a
+        model-recalled item for today's verified news. A hotspot is an event, so
+        it opens on the event roster: the business seats would turn it into a
+        market opportunity instead of talking about what happened. If the user
+        has ticked nothing on that roster we seat all eight rather than start an
+        empty table.
         """
         topic = topic.strip()
         if not topic:
             return
-        roles = self.lobby.selected_roles() or list(DEFAULT_ROLES)
+        self.lobby.set_mode("event")
+        roles = self.lobby.selected_roles() or default_roles_for("event")
         self.lobby.topic.setText(topic)
         self.lobby.source.setPlainText(note)
         self._start(topic, roles, note, fetch_news=False)

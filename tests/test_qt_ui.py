@@ -14,7 +14,7 @@ try:
     from brainstorm.engine import MockDiscussionProvider
     from brainstorm.models import DiscussionSession, Utterance, ViewpointKind
     from brainstorm.qt_app import LobbyPage, MainWindow, RoundtablePage, SummaryPage
-    from brainstorm.roles import DEFAULT_ROLES
+    from brainstorm.roles import DEFAULT_ROLES, EVENT_ROLE_IDS
     from brainstorm.session_controller import SessionController
     from brainstorm.storage import SessionStore
     from brainstorm.qt_theme import app_stylesheet
@@ -52,6 +52,26 @@ class QtUiTests(unittest.TestCase):
         for child in self.history_dir.glob("*"):
             child.unlink()
         self.history_dir.rmdir()
+
+    def test_lobby_mode_button_swaps_the_whole_roster(self):
+        from brainstorm.roles import SECTION_TEXT
+
+        lobby = LobbyPage(self.store)
+        business_ids = {chip.role.id for chip in lobby.role_chips}
+        lobby.mode_buttons["event"].click()
+        self.assertEqual(lobby.mode, "event")
+        self.assertEqual({chip.role.id for chip in lobby.role_chips}, set(EVENT_ROLE_IDS))
+        self.assertEqual(len(lobby.role_chips), 8)
+        self.assertEqual(lobby.topic.placeholderText(), SECTION_TEXT["event"]["topic_placeholder"])
+        self.assertEqual(lobby.start_button.text(), SECTION_TEXT["event"]["start_button"])
+        self.assertIn("吃瓜", SECTION_TEXT["event"]["note"])
+        self.assertIn("吃瓜", SECTION_TEXT["event"]["archive_title"])
+        self.assertNotEqual(SECTION_TEXT["event"]["start_button"], SECTION_TEXT["business"]["start_button"])
+
+        lobby.mode_buttons["business"].click()
+        self.assertEqual(lobby.mode, "business")
+        self.assertEqual({chip.role.id for chip in lobby.role_chips}, business_ids)
+        self.assertEqual(lobby.topic.placeholderText(), SECTION_TEXT["business"]["topic_placeholder"])
 
     def test_lobby_has_explicit_window_and_exit_controls(self):
         lobby = LobbyPage(self.store)
@@ -288,7 +308,12 @@ class QtUiTests(unittest.TestCase):
             topic, roles, note, fetch_news = started[0]
             self.assertEqual(topic, "某热点事件")
             self.assertIn("AI 回忆", note)
-            self.assertTrue(roles, "没有勾选角色时应当回退到全部九个，而不是开一场空圆桌")
+            self.assertTrue(roles, "没有勾选角色时应当回退到全部八个，而不是开一张空桌")
+            self.assertEqual(
+                {role.id for role in roles}, set(EVENT_ROLE_IDS),
+                "热点是事件，应当坐事件讨论分区的八个席位，而不是商业痛点的九个人",
+            )
+            self.assertEqual(window.lobby.mode, "event")
             self.assertFalse(fetch_news)
             self.assertEqual(window.lobby.topic.text(), "某热点事件")
         finally:

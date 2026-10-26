@@ -20,15 +20,19 @@ from brainstorm.config import AppConfig
 from brainstorm.export import export_json, export_markdown
 from brainstorm.llm import ProviderFailure, TurnSpec
 from brainstorm.providers import resolve_providers
-from brainstorm.roles import DEFAULT_ROLES
+from brainstorm.roles import DEFAULT_ROLES, EVENT_ROLES, face_label
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("topic")
     parser.add_argument("--extra", type=int, default=6, help="首批之后逐条追加的发言数")
+    parser.add_argument("--section", choices=("business", "event"), default="business",
+                        help="business=商业痛点九个职业席位；event=事件讨论八个八卦席位")
     parser.add_argument("--out", default="artifacts")
     args = parser.parse_args()
+
+    roles = EVENT_ROLES if args.section == "event" else DEFAULT_ROLES
 
     config = AISettingsStore().load(AppConfig.from_environment())
     provider, _news, status = resolve_providers(config)
@@ -43,19 +47,20 @@ def main() -> int:
     print("[i] 首批生成中……", flush=True)
     t = time.perf_counter()
     try:
-        session = provider.discuss(args.topic, DEFAULT_ROLES)
+        session = provider.discuss(args.topic, roles)
     except ProviderFailure as exc:
         print(f"[x] 首批失败: {exc.code} / {exc.safe_message}", flush=True)
         return 3
     print(f"[i] 首批 {len(session.utterances)} 条，用时 {time.perf_counter() - t:.1f}s", flush=True)
     for index, item in enumerate(session.utterances, 1):
-        print(f"    {index:2d}. {item.speaker_name} · {item.phase} · {item.kind.value} · {item.intent}", flush=True)
+        print(f"    {index:2d}. {item.speaker_name} · {item.phase} · {item.kind.value} · {item.intent}"
+              f" · {face_label(item.face) or '—'}", flush=True)
 
     for step in range(args.extra):
         session.rebuild_state()
         t = time.perf_counter()
         try:
-            added = provider.extend_batch(session, session.discussion_state, roles=DEFAULT_ROLES)
+            added = provider.extend_batch(session, session.discussion_state, roles=roles)
         except ProviderFailure as exc:
             print(f"[!] 追加第 {step + 1} 条失败: {exc.code} / {exc.safe_message}", flush=True)
             break
@@ -71,13 +76,13 @@ def main() -> int:
             provider.last_state_refresh = None
         note = f" · 质检重写：{item.review_note}" if item.review_note else ""
         print(f"[{step + 1}/{args.extra}] {item.speaker_name} · {item.phase} · {item.intent}"
-              f" · 回应={item.replies_to or '无'} ({time.perf_counter() - t:.1f}s){note}", flush=True)
+              f" · {face_label(item.face) or '—'} · 回应={item.replies_to or '无'} ({time.perf_counter() - t:.1f}s){note}", flush=True)
 
     print("[i] 生成结束总结中……", flush=True)
     t = time.perf_counter()
     try:
         final = provider.generate_turn(
-            session.topic, DEFAULT_ROLES, list(session.sources), list(session.utterances),
+            session.topic, roles, list(session.sources), list(session.utterances),
             TurnSpec("moderator", "主持人", "阶段总结", "总结", final=True),
         )
         session.append_utterance(final.utterance)
