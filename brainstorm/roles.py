@@ -128,6 +128,7 @@ def face_label(face: str) -> str:
 SECTION_TEXT: dict[str, dict[str, str]] = {
     "business": {
         "short": "商业痛点",
+        "tab_text": "商业痛点　→　机会档案",
         "example_topic": "小城市年轻人为什么越来越愿意为短途体验付费？",
         "role_title": "选择今晚入席的角色",
         "intro": "把一个问题放上桌，让九种社会视角彼此回应，再把冲突收敛成可验证的机会。",
@@ -150,6 +151,7 @@ SECTION_TEXT: dict[str, dict[str, str]] = {
     },
     "event": {
         "short": "事件讨论",
+        "tab_text": "事件讨论　→　吃瓜纪要",
         "example_topic": "小区业主群里为停车位吵起来这件事",
         "role_title": "这件事上有哪些人说话",
         "intro": "把一件事放上桌，八种性情的人各说一面，吵完再收一份吃瓜纪要。",

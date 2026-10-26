@@ -73,6 +73,16 @@ def kind_legend() -> str:
     return "\n".join(lines)
 
 
+def role_tooltip(role: Role) -> str:
+    """Hover text for a seat: business seats show their lens, event seats both faces."""
+    yang = getattr(role, "yang", "")
+    yin = getattr(role, "yin", "")
+    if not yang or not yin:
+        return role.duty
+    trigram = getattr(role, "trigram", "")
+    return f"{trigram} · {role.name}\n阳面：{yang}\n阴面：{yin}\n\n{role.duty}"
+
+
 class RoleChip(QPushButton):
     def __init__(self, role: Role, parent=None) -> None:
         super().__init__(parent)
@@ -80,7 +90,7 @@ class RoleChip(QPushButton):
         self.setObjectName("roleChip")
         self.setCheckable(True)
         self.setAccessibleName(f"{role.name}，{role.duty}")
-        self.setToolTip(role.duty)
+        self.setToolTip(role_tooltip(role))
         self.setMinimumHeight(72)
         self.setMinimumWidth(170)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
@@ -102,7 +112,8 @@ class RoleChip(QPushButton):
         name = QLabel(role.name)
         name.setStyleSheet("font-size: 14px; font-weight: 600;")
         name.setWordWrap(True)
-        duty = QLabel(role.duty)
+        trigram = getattr(role, "trigram", "")
+        duty = QLabel(f"{trigram} · {role.duty}" if trigram else role.duty)
         duty.setStyleSheet(f"font-size: 11px; color: {COLORS['muted']};")
         duty.setWordWrap(True)
         for label in (name, duty):
@@ -160,6 +171,23 @@ class LobbyPage(QWidget):
         self.exit_button.clicked.connect(self.exit_requested)
         top.addWidget(self.exit_button)
         outer.addLayout(top)
+
+        # 分区切换放在标题下面单独一行：它是整场讨论的前提，不该缩在角色面板角落。
+        section_bar = QHBoxLayout()
+        section_bar.setSpacing(10)
+        self.mode_buttons: dict[str, QPushButton] = {}
+        for key in ("business", "event"):
+            tab = QPushButton(SECTION_TEXT[key]["tab_text"])
+            tab.setCheckable(True)
+            tab.setProperty("sectionTab", True)
+            tab.setMinimumHeight(42)
+            tab.setCursor(Qt.CursorShape.PointingHandCursor)
+            tab.setToolTip(SECTION_TEXT[key]["intro"])
+            tab.clicked.connect(lambda _checked=False, target=key: self.set_mode(target))
+            self.mode_buttons[key] = tab
+            section_bar.addWidget(tab)
+        section_bar.addStretch()
+        outer.addLayout(section_bar)
 
         intro = QLabel(SECTION_TEXT["business"]["intro"])
         self.intro = intro
@@ -234,14 +262,6 @@ class LobbyPage(QWidget):
         self.role_title.setStyleSheet(f"color: {COLORS['muted']}; font-size: 13px;")
         role_header.addWidget(self.role_title)
         role_header.addStretch()
-        self.mode_buttons: dict[str, QPushButton] = {}
-        for key in ("business", "event"):
-            button = QPushButton(SECTION_TEXT[key]["short"])
-            button.setCheckable(True)
-            button.setMinimumHeight(28)
-            button.clicked.connect(lambda _checked=False, target=key: self.set_mode(target))
-            self.mode_buttons[key] = button
-            role_header.addWidget(button)
         role_layout.addLayout(role_header)
         self.role_stack = QStackedWidget()
         for key, roster in ROLES_BY_MODE.items():
@@ -459,6 +479,13 @@ class RoundtablePage(QWidget):
         self.topic_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.topic_label.setMinimumWidth(100)
         header.addWidget(self.topic_label, 1)
+        self.section_label = QLabel("")
+        self.section_label.setStyleSheet(
+            f"color: {COLORS['gold']}; font-size: 12px; padding: 3px 10px; "
+            f"border: 1px solid #4c5f3d; border-radius: 10px;"
+        )
+        self.section_label.setVisible(False)
+        header.addWidget(self.section_label)
         self.phase_label = QLabel("准备就绪")
         self.phase_label.setStyleSheet(f"color: {COLORS['gold']}; margin-left: 18px;")
         header.addWidget(self.phase_label)
@@ -608,6 +635,15 @@ class RoundtablePage(QWidget):
         mode = self.session.mode if self.session is not None else "business"
         return SECTION_TEXT.get(mode, SECTION_TEXT["business"])
 
+    def _show_section_badge(self, session: DiscussionSession) -> None:
+        """Say which table you are at, so the two sections are never ambiguous."""
+        if session.mode == "event":
+            self.section_label.setText("八卦桌 · 事件讨论")
+            self.section_label.setVisible(True)
+        else:
+            self.section_label.setText("")
+            self.section_label.setVisible(False)
+
     def _session_ready(self, session: DiscussionSession) -> None:
         self.session = session
         self._history.clear()
@@ -615,6 +651,7 @@ class RoundtablePage(QWidget):
         self.evidence.clear()
         self.topic_label.setText(QFontMetrics(self.topic_label.font()).elidedText(session.topic, Qt.TextElideMode.ElideMiddle, 440))
         self.topic_label.setToolTip(session.topic)
+        self._show_section_badge(session)
         self._show_integration(session)
         self._show_evidence(session)
         self._discussion_state_changed(session.discussion_state)
@@ -721,7 +758,7 @@ class RoundtablePage(QWidget):
         source = self.session.utterance_source(utterance) if self.session else "未标记来源"
         intent = f" · {utterance.intent}" if utterance.intent and utterance.intent != "initial" else ""
         stance = " · 改变立场" if utterance.stance_change else ""
-        face = f"（{face_label(utterance.face)}）" if utterance.face else ""
+        face = f" · {face_label(utterance.face)}" if utterance.face else ""
         return (
             f"【{utterance.phase}】 {utterance.speaker_name}{face} · {utterance.kind.value}"
             f"{intent}{stance}{self._reply_label(utterance)}{self._intervention_label(utterance)} · {source}"
@@ -751,7 +788,7 @@ class RoundtablePage(QWidget):
         if compact and len(content) > 140:
             content = content[:140] + "…（全文见记录）"
         labels = f"{self._reply_label(utterance)}{self._intervention_label(utterance)}"
-        face = f"（{face_label(utterance.face)}）" if utterance.face else ""
+        face = f" · {face_label(utterance.face)}" if utterance.face else ""
         self._set_bubble(f"{utterance.speaker_name}{face}  ·  {kind_label(utterance.kind)}{labels}  ·  {source}\n{content}", kind_legend())
 
     def _state(self, state: str) -> None:

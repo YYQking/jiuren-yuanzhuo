@@ -8,13 +8,13 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 _IMPORT_ERROR = None
 try:
-    from PySide6.QtWidgets import QApplication, QPushButton
+    from PySide6.QtWidgets import QApplication, QLabel, QPushButton
     from PySide6.QtGui import QFontDatabase
     from PySide6.QtCore import QCoreApplication, QEvent
     from brainstorm.engine import MockDiscussionProvider
     from brainstorm.models import DiscussionSession, Utterance, ViewpointKind
     from brainstorm.qt_app import LobbyPage, MainWindow, RoundtablePage, SummaryPage
-    from brainstorm.roles import DEFAULT_ROLES, EVENT_ROLE_IDS
+    from brainstorm.roles import DEFAULT_ROLES, EVENT_ROLES, EVENT_ROLE_IDS
     from brainstorm.session_controller import SessionController
     from brainstorm.storage import SessionStore
     from brainstorm.qt_theme import app_stylesheet
@@ -529,6 +529,40 @@ class QtUiTests(unittest.TestCase):
             self.assertEqual(session.utterances, original)
         finally:
             window.close()
+
+
+    def test_event_seat_shows_trigram_and_both_faces(self):
+        """The roster must say which trigram a seat comes from and what both of
+        its faces are: a nickname alone tells the user nothing."""
+        lobby = LobbyPage(self.store)
+        lobby.mode_buttons["event"].click()
+        chip = next(item for item in lobby.role_chips if item.role.id == "qian")
+        self.assertIn("乾·天", chip.toolTip())
+        self.assertIn("阳面", chip.toolTip())
+        self.assertIn("阴面", chip.toolTip())
+        labels = [label.text() for label in chip.findChildren(QLabel)]
+        self.assertIn("乾·天 · 定调子、拍板的人", labels)
+
+    def test_event_roundtable_says_which_table_you_are_at(self):
+        page = RoundtablePage(self.controller)
+        session = DiscussionSession(
+            topic="停车位吵起来了",
+            selected_role_ids=[role.id for role in EVENT_ROLES],
+            mode="event",
+        )
+        session.append_utterance(Utterance("qian", "天哥", "这事得先定规矩", ViewpointKind.FACT, "独立观点",
+                                           origin="model", face="yang"))
+        self.controller.load(session)
+        page._utterance(session.utterances[0], 0, 1)
+        self.assertEqual(page.section_label.text(), "八卦桌 · 事件讨论")
+        self.assertTrue(page.section_label.isVisibleTo(page))
+        self.assertIn("天哥 · 阳面", page.transcript.toPlainText())
+
+    def test_business_roundtable_hides_the_event_badge(self):
+        page = RoundtablePage(self.controller)
+        session = DiscussionSession(topic="社区养老", selected_role_ids=["builder"])
+        self.controller.load(session)
+        self.assertFalse(page.section_label.isVisibleTo(page))
 
 
 if __name__ == "__main__":

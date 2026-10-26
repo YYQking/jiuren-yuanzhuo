@@ -105,6 +105,21 @@
 
 ## 7. 最近一次缺陷与修复（不得回归）
 
+### 7.0 两个分区必须一眼看出是两张桌子（2026-10-26，UI 收尾）
+
+用户反馈"名字改，这个设定好怪"，随后要求"再改下UI"。定稿：App 名仍叫「九人圆桌」；大厅里两套人（商业痛点九个职业头衔、事件讨论八个口语绰号+卦名），切换后必须能立刻看出换了桌。
+
+已做的四处改动（均在 `brainstorm/qt_app.py`）：
+
+- 分区切换从"角色面板右上角两个小按钮"改为标题下两个大按钮：「商业痛点 → 机会档案」「事件讨论 → 吃瓜纪要」，当前项金色高亮（`LobbyPage.mode_buttons`）。
+- 事件席位卡显示卦名与两面的样子：「乾·天 · 定调子、拍板的人」；`toolTip` 里有阳面/阴面两行（`_role_chip` 里的 `face_tip`）。
+- 转写正文里每条发言带面别标签：「天哥 · 阳面　事实（已经确认的）　回应 地姐」；`_speaker_tag()` 只在 `utterance.face` 非空时追加。
+- 桌面页左上角徽标「八卦桌 · 事件讨论」（金色小字 `self.section_label`），商业模式隐藏；`_session_ready`/`load_session` 按 `session.mode` 显示。
+
+回归测试：`tests/test_qt_ui.py::QtUiTests.test_event_seat_shows_trigram_and_both_faces`、`test_event_roundtable_says_which_table_you_are_at`、`test_business_roundtable_hides_the_event_badge`（断言用 `isVisibleTo(page)`，整页未 show 时 `isVisible()` 恒为 False）。
+
+注意：`RoundtablePage` 的圆桌席位由 `set_selected_roles()` 决定，`controller.load()` **不会**改它；从大厅进入真实流程时 `MainWindow._start` 先调 `set_selected_roles` 再 `controller.start`，所以正确。自己写预览脚本时若只调 `controller.load()`，画面会留九个商业席位——那是脚本问题，不是产品缺陷。
+
 ### 7.1 阴阳面的翻面必须由程序决定（2026-10-26，事件分区）
 
 用户要求事件分区的人有"阴阳两面"。第一版把翻面交给模型（提示词让模型填 `face`），真实跑测 19 条发言 **全是阳面**——模型从不主动要求翻面，于是"两面"只是设定里的装饰。

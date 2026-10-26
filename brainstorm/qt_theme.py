@@ -39,6 +39,9 @@ def app_stylesheet() -> str:
     QPushButton#roleChip {{ background: #102019; border: 1px solid #2d4437; border-radius: 12px; padding: 0; text-align: left; }}
     QPushButton#roleChip:checked {{ background: #20372c; border-color: #827449; }}
     QPushButton#roleChip:hover {{ background: #284237; border-color: {c['gold']}; }}
+    QPushButton[sectionTab="true"] {{ background: #102019; color: {c['muted']}; border: 1px solid #2d4437; border-radius: 14px; padding: 10px 20px; font-size: 14px; text-align: left; }}
+    QPushButton[sectionTab="true"]:hover {{ border-color: {c['gold']}; color: {c['cream']}; }}
+    QPushButton[sectionTab="true"]:checked {{ background: {c['gold']}; color: {c['ink']}; border-color: {c['gold_bright']}; font-weight: 700; }}
     QFrame#hotspotCard {{ background: {c['panel']}; border: 1px solid #334d40; border-radius: 14px; }}
     QFrame#hotspotCard:hover {{ border-color: #647650; }}
     QFrame#hotspotCard QPushButton {{ padding: 7px 10px; font-size: 12px; }}
