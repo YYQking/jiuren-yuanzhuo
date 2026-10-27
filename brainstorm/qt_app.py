@@ -25,9 +25,12 @@ from PySide6.QtGui import (
     QIcon,
     QKeySequence,
     QPainter,
+    QPainterPath,
     QPen,
+    QPixmap,
     QRadialGradient,
 )
+from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -69,7 +72,37 @@ from .session_controller import SessionController
 from .storage import SessionStore
 
 
-# 发言类型来自模型输出的分类，读者不一定看得懂「假设」「待验证」指什么，
+def avatar_pixmap(role_id: str, size: int) -> QPixmap:
+    """把头像 SVG 画成圆形位图。
+
+    Qt 的 SVG 渲染器不认 clipPath，直接显示会是一个方块色块；
+    所以在外面套一层圆形裁剪，顺带按 2x 出图避免糊。
+    """
+
+    ratio = 2
+    side = max(8, int(size)) * ratio
+    pixmap = QPixmap(side, side)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    root = (
+        Path(sys._MEIPASS)
+        if getattr(sys, "frozen", False)
+        else Path(__file__).resolve().parent.parent
+    )
+    renderer = QSvgRenderer(str(root / "assets" / "avatars" / f"{role_id}.svg"))
+    if not renderer.isValid():
+        return pixmap
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+    circle = QPainterPath()
+    circle.addEllipse(0.0, 0.0, float(side), float(side))
+    painter.setClipPath(circle)
+    renderer.render(painter, QRectF(0.0, 0.0, float(side), float(side)))
+    painter.end()
+    pixmap.setDevicePixelRatio(float(ratio))
+    return pixmap
+
+
 # 所以在发言卡片上直接用一句人话解释，而不是让人去猜或去翻说明。
 KIND_IN_PLAIN_WORDS = {
     ViewpointKind.FACT.value: "已经确认的情况",
@@ -131,7 +164,10 @@ class RoleChip(QPushButton):
         layout.setSpacing(10)
         portrait = QLabel()
         portrait.setFixedSize(40, 40)
-        if not icon.isNull():
+        rounded = avatar_pixmap(role.id, 40)
+        if not rounded.isNull():
+            portrait.setPixmap(rounded)
+        elif not icon.isNull():
             portrait.setPixmap(icon.pixmap(QSize(40, 40)))
         else:
             portrait.setText(role.name[:1])
@@ -232,7 +268,10 @@ class SeatCard(QPushButton):
         portrait = QLabel()
         portrait.setFixedSize(72, 72)
         portrait.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        if not icon.isNull():
+        rounded = avatar_pixmap(role.id, 72)
+        if not rounded.isNull():
+            portrait.setPixmap(rounded)
+        elif not icon.isNull():
             portrait.setPixmap(icon.pixmap(QSize(72, 72)))
         else:
             portrait.setText(role.name[:1])
