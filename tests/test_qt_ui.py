@@ -596,6 +596,28 @@ class QtUiTests(unittest.TestCase):
         self.controller.load(session)
         self.assertFalse(page.section_label.isVisibleTo(page))
 
+    def test_switching_section_swaps_the_avatars_on_the_table(self):
+        """大厅与局内必须是同一张头像，不能一桌新图一桌旧木刻。"""
+
+        from brainstorm.roles import DEFAULT_ROLES, default_roles_for
+
+        page = RoundtablePage(self.controller)
+        business_ids = {role.id for role in DEFAULT_ROLES}
+        self.assertEqual(page.canvas._avatar_pixmaps.keys(), business_ids)
+
+        for mode in ("event", "claim"):
+            seats = default_roles_for(mode)
+            page.canvas.set_roles(seats)
+            wanted = {role.id for role in seats}
+            self.assertEqual(page.canvas._avatar_pixmaps.keys(), wanted, mode)
+            self.assertEqual(page.canvas._avatar_renderers.keys(), wanted, mode)
+            # 每个席位都得真有位图，否则又会退回木刻版
+            for role in seats:
+                self.assertFalse(page.canvas._avatar_pixmaps[role.id].isNull(), role.id)
+
+        page.canvas.set_roles(list(DEFAULT_ROLES))
+        self.assertEqual(page.canvas._avatar_pixmaps.keys(), business_ids)
+
 
     def test_window_mode_cycles_and_never_minimizes(self):
         window = MainWindow()

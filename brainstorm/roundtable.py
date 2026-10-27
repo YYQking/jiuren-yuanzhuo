@@ -47,6 +47,16 @@ class RoundtableCanvas(QWidget):
         else:
             root = Path(__file__).resolve().parent.parent
         self._avatar_dir = root / "assets" / "avatars"
+        self._load_avatar_assets(roles)
+
+    def _load_avatar_assets(self, roles: list[Role]) -> None:
+        """按当前桌的席位重新读头像。
+
+        以前只在构造时读一次，切分区后位图字典还留着上一桌的人，
+        新席位找不到位图就退回木刻版 SVG——大厅是新头像、局内是旧木刻，
+        两边对不上。所以每次换席位都要重读。
+        """
+
         self._avatar_renderers = {
             role.id: QSvgRenderer(str(self._avatar_dir / f"{role.id}.svg"))
             for role in roles
@@ -91,10 +101,7 @@ class RoundtableCanvas(QWidget):
         self.roles = list(roles)
         self.selected_ids = {role.id for role in self.roles}
         self.active_id = None
-        self._avatar_renderers = {
-            role.id: QSvgRenderer(str(self._avatar_dir / f"{role.id}.svg"))
-            for role in self.roles
-        }
+        self._load_avatar_assets(self.roles)
         self.update()
 
     def paintEvent(self, _event) -> None:
