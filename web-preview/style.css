@@ -1,15 +1,16 @@
-/* S1「剧场夜」——暗场、聚光灯、只会亮起说话的那个人。
-   每个效果后面都标了「Qt 落地」，保证定稿后能搬回现在的 PySide6 程序。 */
+/* S1「赌桌」—— 绿绒桌面、金边、筹码、暗牌。
+   每个效果后面标了「Qt 落地」，保证定稿后能搬回现在的 PySide6 程序。 */
 
 :root {
-  --ink: #e8e2d6;
-  --ink-dim: #9a938a;
-  --gold: #d9a558;
-  --gold-soft: rgba(217, 165, 88, 0.16);
-  --warm: 255, 196, 120;
-  --cool: 132, 176, 216;
-  --face: var(--warm);          /* 由 body[data-face] 切换：阳面暖、阴面冷 */
-  --bg: #08080a;
+  --ink: #efe7d7;
+  --ink-dim: #a09788;
+  --gold: #d8b25e;
+  --gold-hi: #f2d79a;
+  --warm: 255, 198, 122;
+  --cool: 126, 172, 214;
+  --face: var(--warm);
+  --felt-1: #11503a;
+  --felt-2: #072a1e;
 }
 
 * { box-sizing: border-box; }
@@ -17,265 +18,405 @@
 html, body {
   height: 100%;
   margin: 0;
-  background: var(--bg);
+  background: #080605;
   color: var(--ink);
   font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
 }
 
-/* 整个舞台：中央一束光打下来，四周压暗。
-   Qt 落地：QSS 的 qlineargradient + 一个覆盖层 QWidget（attribute WA_TransparentForMouseEvents）。 */
+/* 赌场房间：整体极暗，桌子正上方一盏灯，地面有点暗红地毯的意思。
+   Qt 落地：QSS qlineargradient 叠加一个不吃鼠标的覆盖层 QWidget。 */
 .stage {
   position: relative;
   height: 100%;
   display: grid;
   grid-template-rows: auto auto 1fr auto auto;
-  padding: 22px 34px 16px;
+  padding: 20px 32px 14px;
   background:
-    radial-gradient(120% 80% at 50% 30%, rgba(var(--face), 0.10), transparent 62%),
-    radial-gradient(90% 70% at 50% 120%, rgba(var(--face), 0.05), transparent 70%),
-    #08080a;
-  transition: background 900ms ease;   /* 翻面时整屋的色温慢慢变 */
+    radial-gradient(58% 42% at 50% 34%, rgba(255, 214, 150, 0.16), transparent 66%),
+    radial-gradient(120% 90% at 50% 116%, rgba(90, 26, 20, 0.55), transparent 62%),
+    radial-gradient(80% 60% at 50% 8%, rgba(60, 40, 20, 0.35), transparent 70%),
+    #080605;
 }
 
-/* 顶上极淡的颗粒/暗角，让画面不"平" */
+/* 灯罩下的暗角，画面不"平" */
 .stage::after {
   content: "";
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background: radial-gradient(60% 50% at 50% 42%, transparent 40%, rgba(0, 0, 0, 0.55) 100%);
+  background: radial-gradient(58% 46% at 50% 40%, transparent 42%, rgba(0, 0, 0, 0.62) 100%);
 }
 
 /* ── 顶栏 ───────────────────────────────────────────── */
 .topbar {
+  position: relative;
+  z-index: 4;
   display: grid;
   grid-template-columns: auto 1fr auto;
   align-items: baseline;
-  gap: 18px;
-  position: relative;
-  z-index: 3;
+  gap: 16px;
 }
-
-.brand { display: flex; align-items: baseline; gap: 10px; white-space: nowrap; }
-.mark { font-size: 13px; letter-spacing: 0.22em; color: var(--gold); }
-.divider { width: 1px; height: 12px; background: rgba(255, 255, 255, 0.18); }
-.table-name { font-size: 13px; color: var(--ink-dim); letter-spacing: 0.08em; }
+.brand { display: flex; align-items: baseline; gap: 9px; white-space: nowrap; }
+.mark {
+  font-size: 12px;
+  letter-spacing: 0.22em;
+  color: var(--gold-hi);
+  text-shadow: 0 0 14px rgba(242, 215, 154, 0.35);
+}
+.divider { width: 1px; height: 11px; background: rgba(255, 255, 255, 0.2); }
+.table-name { font-size: 12px; color: var(--ink-dim); letter-spacing: 0.08em; }
 
 .topic {
   margin: 0;
   font-family: "Songti SC", "SimSun", "Noto Serif SC", serif;
   font-size: 17px;
   font-weight: 500;
-  letter-spacing: 0.01em;
-  color: #f0e9dc;
+  color: #f4ecdb;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
 .counter {
   display: flex;
   align-items: baseline;
-  gap: 14px;
+  gap: 12px;
   font-size: 12px;
   color: var(--ink-dim);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
-.hint { color: var(--gold); opacity: 0.85; }
+.hint { color: var(--gold); }
 
-/* ── 画外音（主持人）───────────────────────────────── */
+/* ── 荷官画外音 ─────────────────────────────────────── */
 .voiceover {
   position: relative;
-  z-index: 3;
+  z-index: 4;
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 0 4px;
-  opacity: 0.28;
+  padding: 10px 0 2px;
+  opacity: 0.26;
   transition: opacity 260ms ease;
 }
 .voiceover.active { opacity: 1; }
 .vo-label {
-  font-size: 11px;
-  letter-spacing: 0.18em;
-  color: var(--gold);
-  border: 1px solid rgba(217, 165, 88, 0.35);
-  border-radius: 999px;
-  padding: 3px 10px;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  color: var(--gold-hi);
+  border: 1px solid rgba(216, 178, 94, 0.4);
+  border-radius: 4px;
+  padding: 3px 9px;
   white-space: nowrap;
 }
-.vo-line {
-  flex: 1;
-  height: 1px;
-  background: linear-gradient(90deg, rgba(217, 165, 88, 0.5), transparent);
-}
+.vo-line { flex: 1; height: 1px; background: linear-gradient(90deg, rgba(216, 178, 94, 0.5), transparent); }
 
-/* ── 舞台与席位 ─────────────────────────────────────── */
-.floor {
-  position: relative;
-  min-height: 0;
-  z-index: 2;
-}
+/* ── 桌面 ───────────────────────────────────────────── */
+.floor { position: relative; min-height: 0; z-index: 2; }
 
 .table {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 46%;
-  height: 54%;
-  transform: translate(-50%, -50%) scale(0.92);
+  width: 48%;
+  height: 56%;
+  transform: translate(-50%, -50%) scale(0.9);
   opacity: 0;
-  transition: transform 700ms ease, opacity 700ms ease;
+  transition: transform 760ms cubic-bezier(.2,.8,.2,1), opacity 760ms ease;
 }
 .table.in { transform: translate(-50%, -50%) scale(1); opacity: 1; }
 
-.table-glow {
-  position: absolute;
-  inset: -18%;
-  border-radius: 50%;
-  background: radial-gradient(closest-side, rgba(var(--face), 0.20), transparent 72%);
-  filter: blur(6px);
-  transition: background 900ms ease;
-}
-
-.table-plate {
+/* 桌沿：厚皮革包边 + 两道金线。绿绒缩在里面，形成一圈边。 */
+.rail {
   position: absolute;
   inset: 0;
   border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: radial-gradient(closest-side, #34200f, #1a0f07 76%, #120a05);
+  box-shadow:
+    0 0 0 2px rgba(242, 215, 154, 0.75),
+    0 0 0 12px #241608,
+    0 0 0 14px rgba(216, 178, 94, 0.6),
+    0 0 0 16px rgba(0, 0, 0, 0.5),
+    0 30px 74px rgba(0, 0, 0, 0.66),
+    inset 0 4px 12px rgba(255, 255, 255, 0.08);
+}
+
+/* 绿绒：中间亮、边缘沉，叠一层极淡的绒面颗粒 */
+.felt {
+  position: absolute;
+  inset: 17px;
+  border-radius: 50%;
   background:
-    radial-gradient(closest-side, rgba(255, 255, 255, 0.045), transparent 78%),
-    linear-gradient(160deg, rgba(255, 255, 255, 0.03), rgba(0, 0, 0, 0.35));
-  box-shadow: inset 0 0 60px rgba(0, 0, 0, 0.6), 0 30px 80px rgba(0, 0, 0, 0.5);
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='g'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='120' height='120' filter='url(%23g)' opacity='0.5'/></svg>") 0 0 / 120px 120px,
+    radial-gradient(closest-side, #1a6b50 0%, #0d4531 62%, #072319 100%);
+  background-blend-mode: overlay, normal;
+  box-shadow:
+    inset 0 0 76px rgba(0, 0, 0, 0.52),
+    inset 0 2px 0 rgba(255, 255, 255, 0.07);
+}
+.felt::after {                              /* 绒面上那层柔光 */
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(58% 50% at 50% 32%, rgba(255, 255, 255, 0.13), transparent 72%);
+}
+
+/* 下注线：一圈虚线，把中央底池框出来 */
+.bet-line {
+  position: absolute;
+  inset: 15%;
+  border-radius: 50%;
+  border: 1px dashed rgba(216, 178, 94, 0.32);
+}
+
+/* 中央底池：筹码越堆越高，牌匾上写着当前阶段 */
+.pot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 6px;
+  gap: 10px;
+  pointer-events: none;
 }
-.plate-phase {
-  font-family: "Songti SC", "SimSun", serif;
-  font-size: 26px;
-  letter-spacing: 0.24em;
-  color: rgba(240, 233, 220, 0.72);
-  text-indent: 0.24em;
+.pot-chips { display: flex; align-items: flex-end; gap: 3px; height: 26px; }
+.pot-chips i {
+  display: block;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #ffe9b8, #d9a53f 58%, #8a5f16);
+  border: 1px solid rgba(0, 0, 0, 0.45);
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.5), inset 0 0 0 2px rgba(255, 255, 255, 0.22);
+  animation: chip-in 320ms cubic-bezier(.2,.9,.2,1);
 }
-.plate-count { font-size: 11px; letter-spacing: 0.16em; color: var(--ink-dim); }
+.pot-chips i.cool { background: radial-gradient(circle at 35% 30%, #dcecff, #7ea9d6 58%, #2f5476); }
+@keyframes chip-in {
+  from { transform: translateY(-22px) scale(0.7); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
 
+.plaque {
+  padding: 6px 20px 7px;
+  border-radius: 4px;
+  background: linear-gradient(180deg, #3a2a17, #241a10);
+  border: 1px solid rgba(216, 178, 94, 0.55);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(242, 215, 154, 0.3);
+  text-align: center;
+  white-space: nowrap;
+}
+.plaque span {
+  display: block;
+  font-family: "Songti SC", "SimSun", serif;
+  font-size: 18px;
+  letter-spacing: 0.2em;
+  color: var(--gold-hi);
+  text-indent: 0.2em;
+}
+.plaque small { display: block; margin-top: 2px; font-size: 10px; letter-spacing: 0.14em; color: rgba(160, 151, 136, 0.9); }
+
+/* 荷官：坐在桌子对面上沿，面前一只牌靴 */
+.dealer {
+  position: absolute;
+  left: 50%;
+  top: -26px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  opacity: 0.75;
+  transition: opacity 300ms ease, transform 300ms ease;
+}
+.dealer.active { opacity: 1; transform: translateX(-50%) translateY(-3px); }
+.dealer .shoe {
+  width: 34px;
+  height: 22px;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #6d1f1f, #33100f);
+  border: 1px solid rgba(216, 178, 94, 0.5);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+.dealer b {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  color: rgba(216, 178, 94, 0.85);
+  font-weight: 500;
+}
+
+/* ── 席位 ───────────────────────────────────────────── */
 .seats { position: absolute; inset: 0; }
 
-/* 一张席位：头像 + 名字 + 面别光环
-   Qt 落地：QToolButton(圆形头像) + QLabel，光环用 QGraphicsDropShadowEffect 的 color/blurRadius。 */
 .seat {
   position: absolute;
   width: 92px;
-  margin: -46px 0 0 -46px;      /* 以中心定位 */
+  margin: -46px 0 0 -46px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   opacity: 0;
   transform: translateY(10px) scale(0.96);
-  transition: opacity 420ms ease, transform 420ms ease, filter 500ms ease;
+  transition: opacity 420ms ease, transform 420ms ease, filter 520ms ease;
 }
 .seat.in { opacity: 1; transform: none; }
-.seat.dim { filter: brightness(0.42) saturate(0.6); }
+.seat.dim { filter: brightness(0.4) saturate(0.55); }
 
+/* 头像：金圈包着，像牌桌上的人像筹码 */
 .seat-face {
   position: relative;
-  width: 62px;
-  height: 62px;
+  width: 58px;
+  height: 58px;
   border-radius: 50%;
-  background: #121216;
-  border: 1px solid rgba(255, 255, 255, 0.10);
-  transition: border-color 500ms ease, box-shadow 500ms ease, transform 320ms ease;
+  background: radial-gradient(circle at 40% 30%, #1b1b20, #0a0a0d);
+  border: 2px solid rgba(255, 255, 255, 0.10);
+  transition: border-color 520ms ease, box-shadow 520ms ease, transform 320ms ease;
 }
-.seat-face img {
-  width: 100%;
-  height: 100%;
-  border-radius: 50%;
-  display: block;
-  opacity: 0.85;
-  transition: opacity 400ms ease;
-}
+.seat-face img { width: 100%; height: 100%; border-radius: 50%; display: block; opacity: 0.88; transition: opacity 400ms ease, filter 500ms ease; }
 
-/* 阳面：暖金环；阴面：冷青环——翻面时肉眼能看出"这个人变了"。 */
 .seat[data-face="yang"] .seat-face {
-  border-color: rgba(var(--warm), 0.85);
-  box-shadow: 0 0 0 1px rgba(var(--warm), 0.28), 0 0 24px rgba(var(--warm), 0.34);
+  border-color: rgba(var(--warm), 0.9);
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.5), 0 0 22px rgba(var(--warm), 0.32);
 }
 .seat[data-face="yin"] .seat-face {
-  border-color: rgba(var(--cool), 0.8);
-  box-shadow: 0 0 0 1px rgba(var(--cool), 0.22), 0 0 22px rgba(var(--cool), 0.28);
+  border-color: rgba(var(--cool), 0.85);
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.5), 0 0 20px rgba(var(--cool), 0.3);
 }
-.seat[data-face="yin"] .seat-face img { filter: grayscale(0.35) contrast(1.05); opacity: 0.75; }
+.seat[data-face="yin"] .seat-face img { filter: grayscale(0.3) contrast(1.06); opacity: 0.7; }
 
-.seat.speaking .seat-face { transform: scale(1.06); }
-.seat.speaking[data-face="yang"] .seat-face { box-shadow: 0 0 0 2px rgba(var(--warm), 0.6), 0 0 46px rgba(var(--warm), 0.65); }
-.seat.speaking[data-face="yin"] .seat-face { box-shadow: 0 0 0 2px rgba(var(--cool), 0.6), 0 0 44px rgba(var(--cool), 0.6); }
+.seat.speaking .seat-face { transform: scale(1.07); }
+.seat.speaking[data-face="yang"] .seat-face { box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.5), 0 0 44px rgba(var(--warm), 0.62); }
+.seat.speaking[data-face="yin"] .seat-face { box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.5), 0 0 42px rgba(var(--cool), 0.58); }
 .seat.speaking .seat-face img { opacity: 1; }
 
-.seat-name { font-size: 13px; letter-spacing: 0.06em; color: #ded6c8; white-space: nowrap; }
-.seat-duty { font-size: 10px; color: rgba(154, 147, 138, 0.75); white-space: nowrap; }
-.seat-trigram {
-  position: absolute;
-  left: 50%;
-  bottom: -18px;
-  transform: translateX(-50%);
-  font-size: 10px;
-  letter-spacing: 0.12em;
-  color: rgba(217, 165, 88, 0.75);
+/* 每个人面前一小摞筹码 */
+.chips {
+  display: flex;
+  gap: 2px;
+  margin-top: -2px;
+  opacity: 0.85;
+  transition: opacity 300ms ease, transform 300ms ease;
+}
+.chips i {
+  display: block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #ffe9b8, #c8993c 60%, #7c5612);
+  border: 1px solid rgba(0, 0, 0, 0.5);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5), inset 0 0 0 2px rgba(255, 255, 255, 0.2);
+}
+.chips i:nth-child(2) { background: radial-gradient(circle at 35% 30%, #ffd6d6, #b8483f 60%, #6d211c); }
+.chips i:nth-child(3) { background: radial-gradient(circle at 35% 30%, #dfefff, #5d86b0 60%, #26405a); }
+.seat.speaking .chips { opacity: 1; transform: translateY(-2px); }
+
+/* 名牌：铜牌 */
+.seat-name {
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  color: #f0e6d2;
+  padding: 1px 8px 2px;
+  border-radius: 3px;
+  background: linear-gradient(180deg, rgba(58, 42, 23, 0.9), rgba(32, 23, 14, 0.9));
+  border: 1px solid rgba(216, 178, 94, 0.32);
   white-space: nowrap;
 }
+.seat-duty { font-size: 10px; color: rgba(160, 151, 136, 0.8); white-space: nowrap; }
 
-/* ── 回应连线：谁在回谁 ─────────────────────────────── */
+/* 暗牌：平时牌背朝上，翻面时翻过来亮出"阴"。
+   Qt 落地：QPropertyAnimation 做 rotateY（Qt 里用 QTransform + 定时器分帧），或者干脆换成两张 QPixmap 轮换。 */
+.card {
+  position: absolute;
+  right: -12px;
+  top: 30px;
+  width: 26px;
+  height: 36px;
+  perspective: 400px;
+  pointer-events: none;
+}
+.card-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+  transition: transform 620ms cubic-bezier(.3,.9,.2,1);
+}
+.card.flipped .card-inner { transform: rotateY(180deg); }
+.card-back, .card-front {
+  position: absolute;
+  inset: 0;
+  border-radius: 3px;
+  backface-visibility: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  border: 1px solid rgba(216, 178, 94, 0.55);
+  box-shadow: 0 5px 12px rgba(0, 0, 0, 0.55);
+}
+.card-back {
+  background:
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.06) 0 2px, transparent 2px 5px),
+    linear-gradient(160deg, #5e1f1f, #2c0e0e);
+  color: rgba(242, 215, 154, 0.85);
+}
+.card-front {
+  transform: rotateY(180deg);
+  background: linear-gradient(160deg, #24405a, #0f1c28);
+  color: #a8cbe8;
+  font-weight: 600;
+}
+
+/* ── 回应连线 ───────────────────────────────────────── */
 .replies { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .replies path {
   fill: none;
-  stroke: rgba(217, 165, 88, 0.55);
+  stroke: rgba(216, 178, 94, 0.6);
   stroke-width: 1.2;
   stroke-dasharray: 5 5;
   animation: dash 900ms linear infinite;
 }
-.replies path.cool { stroke: rgba(var(--cool), 0.55); }
+.replies path.cool { stroke: rgba(var(--cool), 0.6); }
 @keyframes dash { to { stroke-dashoffset: -20; } }
 
-/* ── 说话卡片 ───────────────────────────────────────── */
+/* ── 发言卡片 ───────────────────────────────────────── */
 .speech {
   position: relative;
-  z-index: 3;
-  width: min(1040px, 82%);
+  z-index: 4;
+  width: min(1020px, 80%);
   margin: 0 auto;
-  padding: 18px 26px 12px;
-  border-radius: 18px;
-  background: linear-gradient(180deg, rgba(20, 20, 24, 0.92), rgba(14, 14, 17, 0.92));
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  box-shadow: 0 26px 70px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  padding: 16px 24px 10px;
+  border-radius: 10px;
+  background:
+    linear-gradient(180deg, rgba(26, 21, 15, 0.95), rgba(16, 13, 10, 0.96));
+  border: 1px solid rgba(216, 178, 94, 0.28);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(242, 215, 154, 0.14);
   opacity: 0;
   transform: translateY(14px);
-  transition: opacity 360ms ease, transform 360ms ease;
+  transition: opacity 340ms ease, transform 340ms ease;
 }
 .speech.in { opacity: 1; transform: none; }
 
-.speech-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-.who { font-size: 15px; letter-spacing: 0.04em; color: #f4ecdd; }
+.speech-head { display: flex; align-items: center; gap: 9px; margin-bottom: 8px; flex-wrap: wrap; }
+.who { font-size: 15px; color: #f6eedd; letter-spacing: 0.03em; }
 .face-chip, .intent-chip, .reply-chip {
   font-size: 10px;
   letter-spacing: 0.1em;
   padding: 2px 8px;
-  border-radius: 999px;
+  border-radius: 3px;
   white-space: nowrap;
 }
-.face-chip[data-face="yang"] { color: #ffcf8e; border: 1px solid rgba(var(--warm), 0.45); background: rgba(var(--warm), 0.10); }
+.face-chip[data-face="yang"] { color: #ffd39a; border: 1px solid rgba(var(--warm), 0.45); background: rgba(var(--warm), 0.10); }
 .face-chip[data-face="yin"]  { color: #a8cbe8; border: 1px solid rgba(var(--cool), 0.45); background: rgba(var(--cool), 0.10); }
 .intent-chip { color: var(--ink-dim); border: 1px solid rgba(255, 255, 255, 0.12); }
-.reply-chip { color: rgba(217, 165, 88, 0.9); border: 1px solid rgba(217, 165, 88, 0.3); }
+.reply-chip { color: rgba(216, 178, 94, 0.9); border: 1px solid rgba(216, 178, 94, 0.3); }
 .reply-chip:empty, .face-chip:empty, .intent-chip:empty { display: none; }
 
-.wave { display: inline-flex; align-items: flex-end; gap: 3px; height: 14px; margin-left: 4px; opacity: 0; transition: opacity 200ms; }
+.wave { display: inline-flex; align-items: flex-end; gap: 3px; height: 13px; margin-left: 2px; opacity: 0; transition: opacity 200ms; }
 .wave.on { opacity: 1; }
 .wave i {
   width: 2px; height: 4px; border-radius: 1px;
@@ -286,57 +427,52 @@ html, body {
 .wave i:nth-child(3) { animation-delay: 180ms; }
 .wave i:nth-child(4) { animation-delay: 60ms; }
 .wave i:nth-child(5) { animation-delay: 240ms; }
-@keyframes talk { 0%, 100% { height: 4px; } 50% { height: 13px; } }
+@keyframes talk { 0%, 100% { height: 4px; } 50% { height: 12px; } }
 
 .speech-body {
   font-size: 19px;
-  line-height: 1.95;
+  line-height: 1.92;
   letter-spacing: 0.015em;
-  color: #ece5d8;
-  max-height: 33vh;
+  color: #ece4d5;
+  max-height: 32vh;
   overflow: auto;
   scrollbar-width: thin;
 }
-/* 一句一句浮现：像真的在说话，而不是"啪"整段贴上去。
-   Qt 落地：QLabel 富文本 + QPropertyAnimation(opacity)，或用 QTimer 逐句 append 到 QTextEdit。 */
 .sent { opacity: 0; transform: translateY(4px); transition: opacity 320ms ease, transform 320ms ease; }
 .sent.in { opacity: 1; transform: none; }
 
-/* 置信度着色：确定＝实心、听说＝琥珀、猜＝灰 */
-.c-solid { color: #b9e3c4; font-weight: 600; }
+.c-solid { color: #b6e0bf; font-weight: 600; }
 .c-heard { color: #f0c98a; font-weight: 600; }
-.c-guess { color: #b9b3aa; font-weight: 600; font-style: normal; }
+.c-guess { color: #b7b1a8; font-weight: 600; }
 
 .speech-foot {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 16px;
-  margin-top: 10px;
-  padding-top: 8px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  margin-top: 8px;
+  padding-top: 7px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
   font-size: 11px;
-  color: rgba(154, 147, 138, 0.8);
+  color: rgba(160, 151, 136, 0.8);
 }
 .legend b { font-weight: 600; margin-right: 10px; }
 .keys { white-space: nowrap; }
 
 .notice {
   position: relative;
-  z-index: 3;
-  margin-top: 10px;
+  z-index: 4;
+  margin: 8px 0 0;
   text-align: center;
   font-size: 11px;
-  letter-spacing: 0.04em;
-  color: rgba(154, 147, 138, 0.55);
+  color: rgba(160, 151, 136, 0.5);
 }
 
-/* 窄屏时把席位缩小，别挤成一团 */
 @media (max-width: 1100px) {
   .seat { width: 78px; margin: -39px 0 0 -39px; }
-  .seat-face { width: 52px; height: 52px; }
+  .seat-face { width: 50px; height: 50px; }
   .speech-body { font-size: 17px; }
-  .plate-phase { font-size: 20px; }
+  .plaque span { font-size: 15px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

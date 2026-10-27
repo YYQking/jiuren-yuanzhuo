@@ -1,17 +1,17 @@
-/* S1「剧场夜」的交互：点一次走一条，绝不自动播放。
+/* S1「赌桌」的交互：点一次走一条，绝不自动播放。
    原型只演示手感，数据是死的（data.js），不联网、不调模型。
 
    Qt 落地备忘：
    - 席位定位＝算好像素坐标后 setGeometry，窗口 resize 时重算（同这里的 layout()）
    - 逐句浮现＝QTimer 逐句 append 到只读 QTextEdit，或给每句做一个淡入的 QLabel
-   - 光环/聚光＝QGraphicsDropShadowEffect（color + blurRadius）
+   - 光环／聚光＝QGraphicsDropShadowEffect（color + blurRadius）
    - 回应连线＝自绘 QWidget 的 paintEvent 画 QPainterPath（同这里的 SVG path）
+   - 暗牌翻面＝QPropertyAnimation 分帧改 QTransform 的 m22（rotateY），或两张 QPixmap 轮换
 */
 
 const DEMO = window.DEMO;
 
 const el = {
-  stage: document.getElementById('stage'),
   topic: document.getElementById('topic'),
   tableName: document.getElementById('tableName'),
   counter: document.getElementById('counter'),
@@ -20,6 +20,8 @@ const el = {
   table: document.getElementById('table'),
   platePhase: document.getElementById('platePhase'),
   plateCount: document.getElementById('plateCount'),
+  potChips: document.getElementById('potChips'),
+  dealer: document.getElementById('dealer'),
   seats: document.getElementById('seats'),
   replies: document.getElementById('replies'),
   speech: document.getElementById('speech'),
@@ -40,15 +42,15 @@ const INTENT_TEXT = {
   question: '追问',
   synthesize: '收束',
 };
+const TRIGRAM_GLYPH = /[☰☱☲☳☴☵☶☷]/;
 
-let index = -1;          // 当前说到第几条（-1 = 还没开始）
+let index = -1;
 let started = false;
 let revealTimer = null;
-let seatNodes = new Map();   // role_id -> element
-let faceOf = new Map();      // role_id -> 这个人现在在哪个面
-let geo = { rx: 0, ry: 0, cx: 0, cy: 0 };
+let seatNodes = new Map();
+let geo = { cx: 0, cy: 0, rx: 0, ry: 0 };
 
-/* ── 起手：铺好桌子和席位 ───────────────────────────── */
+/* ── 起手：铺桌子、摆席位、发暗牌 ───────────────────── */
 function boot() {
   el.topic.textContent = DEMO.topic;
   el.tableName.textContent = DEMO.section_label;
@@ -56,41 +58,43 @@ function boot() {
   el.counter.textContent = `第 0 / ${DEMO.turns.length} 条`;
 
   for (const seat of DEMO.seats) {
+    const glyph = (String(seat.trigram).match(TRIGRAM_GLYPH) || ['☰'])[0];
     const node = document.createElement('div');
     node.className = 'seat';
     node.dataset.face = 'yang';
     node.innerHTML = `
       <div class="seat-face"><img src="../assets/avatars/${seat.id}.svg" alt=""></div>
+      <div class="chips"><i></i><i></i><i></i></div>
       <span class="seat-name">${seat.name}</span>
       <span class="seat-duty">${seat.duty}</span>
-      <span class="seat-trigram">${seat.trigram}</span>`;
+      <div class="card" title="暗牌：这个人还没翻出来的那一面">
+        <div class="card-inner">
+          <div class="card-back">${glyph}</div>
+          <div class="card-front">阴</div>
+        </div>
+      </div>`;
     node.title = `${seat.name}（${seat.trigram}）\n阳面：${seat.yang}\n阴面：${seat.yin}\n\n${seat.duty}`;
     el.seats.appendChild(node);
     seatNodes.set(seat.id, node);
-    faceOf.set(seat.id, 'yang');
   }
 
   layout();
   window.addEventListener('resize', () => { layout(); drawReply(); });
 }
 
-/* 八个席位围着一圈。改窗口大小要重算，否则会错位。 */
 function layout() {
   const box = el.seats.getBoundingClientRect();
   const cx = box.width / 2;
   const cy = box.height / 2;
-  const rx = Math.max(160, box.width * 0.36);
-  const ry = Math.max(110, box.height * 0.42);
-  geo = { cx, cy, rx, ry, w: box.width, h: box.height };
+  const rx = Math.max(150, box.width * 0.355);
+  const ry = Math.max(105, box.height * 0.41);
+  geo = { cx, cy, rx, ry };
 
   DEMO.seats.forEach((seat, i) => {
     const angle = (-90 + i * (360 / DEMO.seats.length)) * Math.PI / 180;
-    const x = cx + rx * Math.cos(angle);
-    const y = cy + ry * Math.sin(angle);
     const node = seatNodes.get(seat.id);
-    node.style.left = `${x}px`;
-    node.style.top = `${y}px`;
-    node.dataset.angle = angle;
+    node.style.left = `${cx + rx * Math.cos(angle)}px`;
+    node.style.top = `${cy + ry * Math.sin(angle)}px`;
   });
 
   el.replies.setAttribute('viewBox', `0 0 ${box.width} ${box.height}`);
@@ -102,9 +106,9 @@ function enter() {
   el.hint.textContent = '点一下继续';
   el.table.classList.add('in');
   DEMO.seats.forEach((seat, i) => {
-    setTimeout(() => seatNodes.get(seat.id).classList.add('in'), 90 + i * 85);
+    setTimeout(() => seatNodes.get(seat.id).classList.add('in'), 90 + i * 80);
   });
-  setTimeout(next, 90 + DEMO.seats.length * 85 + 260);
+  setTimeout(next, 90 + DEMO.seats.length * 80 + 240);
 }
 
 /* ── 推进 ───────────────────────────────────────────── */
@@ -121,8 +125,20 @@ function next() {
 function back() {
   if (!started || index <= 0) return;
   index -= 1;
+  rebuildPot();
   render(DEMO.turns[index], false);
   el.hint.textContent = '点一下继续';
+}
+
+/* 底池：一条发言丢一枚筹码进去 */
+function rebuildPot() {
+  el.potChips.innerHTML = '';
+  for (let i = 0; i <= index; i += 1) {
+    const chip = document.createElement('i');
+    const face = DEMO.turns[i].face;
+    if (face === 'yin') chip.className = 'cool';
+    el.potChips.appendChild(chip);
+  }
 }
 
 /* 把一条发言画出来：谁、什么面、回谁、说了什么。 */
@@ -131,26 +147,29 @@ function render(turn, animate) {
 
   el.counter.textContent = `第 ${index + 1} / ${DEMO.turns.length} 条`;
   el.platePhase.textContent = turn.phase || '讨论中';
+  if (animate) {
+    rebuildPot();
+  }
 
-  // 主持人不在桌上：灯打在"画外音"那一条上
   const isHost = turn.speaker_id === 'moderator';
   el.voiceover.classList.toggle('active', isHost);
+  el.dealer.classList.toggle('active', isHost);
 
-  // 谁在说：只有他亮
+  // 只有说话的那个人亮，其余压暗
   for (const [id, node] of seatNodes) {
     node.classList.toggle('speaking', !isHost && id === turn.speaker_id);
-    node.classList.toggle('dim', !isHost ? id !== turn.speaker_id : true);
+    node.classList.toggle('dim', isHost || id !== turn.speaker_id);
   }
 
-  // 整屋色温跟着这个人的面走（翻面最直观的体现）
+  // 整屋色温跟着这个人的面走；翻面时他面前那张暗牌也翻过来
   if (!isHost && turn.face) {
     document.body.dataset.face = turn.face;
-    el.seats.parentElement.dataset.face = turn.face;
-    faceOf.set(turn.speaker_id, turn.face);
-    seatNodes.get(turn.speaker_id).dataset.face = turn.face;
+    const node = seatNodes.get(turn.speaker_id);
+    node.dataset.face = turn.face;
+    node.querySelector('.card').classList.toggle('flipped', turn.face === 'yin');
   }
 
-  el.who.textContent = isHost ? '主持人' : turn.speaker_name;
+  el.who.textContent = isHost ? '荷官' : turn.speaker_name;
   el.faceChip.textContent = turn.face ? FACE_TEXT[turn.face] : '';
   el.faceChip.dataset.face = turn.face || '';
   el.intentChip.textContent = INTENT_TEXT[turn.intent] || turn.intent || '';
@@ -159,10 +178,8 @@ function render(turn, animate) {
   el.replyChip.textContent = target ? `回应 ${target.name}` : '';
   drawReply(turn, target);
 
-  // 正文：按句切开，一句一句出现
   el.body.innerHTML = '';
-  const sentences = splitSentences(turn.content);
-  const nodes = sentences.map((text) => {
+  const nodes = splitSentences(turn.content).map((text) => {
     const p = document.createElement('span');
     p.className = 'sent';
     p.innerHTML = highlight(text);
@@ -170,7 +187,6 @@ function render(turn, animate) {
     return p;
   });
   el.body.scrollTop = 0;
-
   el.speech.classList.add('in');
 
   if (!animate) {
@@ -179,7 +195,6 @@ function render(turn, animate) {
     return;
   }
 
-  // 语速：整段控制在 1 秒上下，太长就一次多放几句
   const step = Math.max(70, Math.min(220, Math.round(1100 / Math.max(1, nodes.length))));
   el.wave.classList.add('on');
   nodes.forEach((node, i) => {
@@ -190,20 +205,17 @@ function render(turn, animate) {
   });
 }
 
-/* 把一句话切成若干句（中文标点，保留标点）。 */
 function splitSentences(text) {
   const parts = text.match(/[^。！？!?…]+[。！？!?…]*/g) || [text];
   return parts.map((s) => s.trim()).filter(Boolean);
 }
 
-/* 置信度着色：让人一眼看出哪句是实的、哪句是听来的、哪句是猜的。
-   Qt 落地：同一段正则，写进 QTextEdit 的 HTML。 */
+/* 置信度着色：让人一眼看出哪句是实的、哪句是听来的、哪句是猜的。 */
 const CONF_RE = /(我知道|我确定|我敢肯定|确定的是)|(我听说|听说|印象里|听人说)|(我猜|我觉得|八成|多半|估摸着|估摸)/g;
 
 function highlight(text) {
-  const escaped = text
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  return escaped.replace(CONF_RE, (match, solid, heard, guess) => {
+  const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return escaped.replace(CONF_RE, (match, solid, heard) => {
     const cls = solid ? 'c-solid' : heard ? 'c-heard' : 'c-guess';
     return `<b class="${cls}">${match}</b>`;
   });
@@ -216,17 +228,13 @@ function replyTarget(turn) {
   const asEvent = /^event-(\d+)$/.exec(String(raw));
   if (asEvent) {
     const hit = DEMO.turns[Number(asEvent[1])];
-    if (hit && hit !== turn) return { id: hit.speaker_id, name: hit.speaker_name, index: Number(asEvent[1]) };
+    if (hit && hit !== turn) return { id: hit.speaker_id, name: hit.speaker_name };
     return null;
   }
-  const byName = DEMO.seats.find((s) => s.name === raw);
-  const byId = DEMO.seats.find((s) => s.id === raw);
-  const seat = byName || byId;
-  if (!seat) return null;
-  return { id: seat.id, name: seat.name, index: -1 };
+  const seat = DEMO.seats.find((s) => s.name === raw) || DEMO.seats.find((s) => s.id === raw);
+  return seat ? { id: seat.id, name: seat.name } : null;
 }
 
-/* 一条细线，从说话的人连到被他回应的人。 */
 function drawReply(turn = DEMO.turns[index], target = turn ? replyTarget(turn) : null) {
   if (!turn || !target) { el.replies.innerHTML = ''; return; }
   const from = seatNodes.get(turn.speaker_id);
@@ -237,20 +245,17 @@ function drawReply(turn = DEMO.turns[index], target = turn ? replyTarget(turn) :
   const t = to.getBoundingClientRect();
   const box = el.seats.getBoundingClientRect();
   const x1 = f.left - box.left + f.width / 2;
-  const y1 = f.top - box.top + 34;
+  const y1 = f.top - box.top + 32;
   const x2 = t.left - box.left + t.width / 2;
-  const y2 = t.top - box.top + 34;
+  const y2 = t.top - box.top + 32;
 
-  // 控制点往外推一点，线就从桌子外侧绕过去
   const mx = (x1 + x2) / 2;
   const my = (y1 + y2) / 2;
-  const push = 0.18;
-  const cxp = mx + (mx - geo.cx) * push;
-  const cyp = my + (my - geo.cy) * push;
+  const cxp = mx + (mx - geo.cx) * 0.18;
+  const cyp = my + (my - geo.cy) * 0.18;
 
   const cool = turn.face === 'yin' ? ' cool' : '';
-  el.replies.innerHTML =
-    `<path class="${cool}" d="M ${x1} ${y1} Q ${cxp} ${cyp} ${x2} ${y2}" />`;
+  el.replies.innerHTML = `<path class="${cool}" d="M ${x1} ${y1} Q ${cxp} ${cyp} ${x2} ${y2}" />`;
 }
 
 /* ── 输入：点一下 / 空格走一条，← 回看 ─────────────── */
@@ -260,10 +265,10 @@ document.addEventListener('click', (event) => {
 });
 
 document.addEventListener('keydown', (event) => {
-  if (event.key === ' ' || event.key === 'Enter' || event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+  if ([' ', 'Enter', 'ArrowRight', 'ArrowDown'].includes(event.key)) {
     event.preventDefault();
     next();
-  } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+  } else if (['ArrowLeft', 'ArrowUp'].includes(event.key)) {
     event.preventDefault();
     back();
   }
