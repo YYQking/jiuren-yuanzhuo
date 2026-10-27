@@ -416,6 +416,13 @@ class LobbyPage(QWidget):
         self.felt = FeltTable()
         outer.addWidget(self.felt, 1)
 
+        # 还没发牌时，桌面上给一句话：这叠牌是这一桌的人
+        self.deck_hint = QLabel("这一桌的人就压在这副牌里 · 点下面「发 牌」", self.felt)
+        self.deck_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.deck_hint.setStyleSheet(
+            f"color: {COLORS['dim']}; font-size: 12px; letter-spacing: 1px;"
+        )
+
         slip_row = QHBoxLayout()
         slip_row.setSpacing(10)
         slip = QFrame()
@@ -562,6 +569,15 @@ class LobbyPage(QWidget):
             targets.append(target)
             card.raise_()
         self._stop_animations()
+        self.deck_hint.setVisible(not self._dealt)
+        if not self._dealt:
+            self.deck_hint.setGeometry(
+                0,
+                int(self.felt.height() / 2 + card_h / 2 + 26),
+                self.felt.width(),
+                22,
+            )
+            self.deck_hint.raise_()
         if not animate:
             for card, target in zip(self._cards, targets):
                 card.move(target)
@@ -648,11 +664,14 @@ class LobbyPage(QWidget):
         self.material_label.setVisible(self.width() >= 1040)
         self.history_button.setText("历史" if narrow else "最近讨论")
         self.hotspots_button.setText("热点" if narrow else "社会热点雷达")
+        self.ai_settings_button.setText("设置" if narrow else "AI 设置")
+        self.window_button.setText("窗口" if narrow else "窗口化")
         self.source.setFixedHeight(34 if compact else 46)
         self.topic.setMinimumHeight(32 if compact else 40)
         self.network_note.setVisible(self.height() >= 700)
         self.bottom_note.setVisible(self.height() >= 660)
         self._layout_cards(animate=False)
+        self._update_network_badge()
         self._pending_layout.start(0)
         self.updateGeometry()
 
@@ -687,13 +706,17 @@ class LobbyPage(QWidget):
         self._update_network_badge()
 
     def _update_network_badge(self, _checked: bool = False) -> None:
-        text = (
-            "联网素材可用 · 观点待核验"
-            if self.rss_opt_in.isEnabled() and self.rss_opt_in.isChecked()
-            else "本次不获取新闻 · 观点待核验"
-        )
+        short = self.width() < 1260
+        live = self.rss_opt_in.isEnabled() and self.rss_opt_in.isChecked()
+        if short:
+            text = "联网素材" if live else "不获取新闻"
+        else:
+            text = "联网素材可用 · 观点待核验" if live else "本次不获取新闻 · 观点待核验"
         self.source_badge.setText(text)
-        self.source_badge.setToolTip(text + "；获取新闻与真实模型讨论是两项独立能力。")
+        self.source_badge.setToolTip(
+            ("联网素材可用" if live else "本次不获取新闻")
+            + " · 观点待核验；获取新闻与真实模型讨论是两项独立能力。"
+        )
 
     def _quick(self) -> None:
         selected = (
