@@ -200,24 +200,51 @@ html, body {
   to { transform: none; opacity: 1; }
 }
 
+/* 桌面中间不挂铜牌——那样像贴了张标签。改成"绒面织进去的字"：
+   不带边框、不用亮金，字体压深、字距拉开、带一点点凹凸，像真桌布上织出来的花纹。 */
+.pot::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: calc(50% - 6px);
+  width: 132px;
+  height: 74px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 1px solid rgba(216, 178, 94, 0.14);
+  box-shadow: inset 0 0 0 4px rgba(0, 0, 0, 0.10);
+  pointer-events: none;
+}
+
 .plaque {
-  padding: 6px 20px 7px;
-  border-radius: 4px;
-  background: linear-gradient(180deg, #3a2a17, #241a10);
-  border: 1px solid rgba(216, 178, 94, 0.55);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(242, 215, 154, 0.3);
+  padding: 0;
+  background: none;
+  border: 0;
+  box-shadow: none;
   text-align: center;
   white-space: nowrap;
 }
 .plaque span {
   display: block;
-  font-family: "Songti SC", "SimSun", serif;
-  font-size: 18px;
-  letter-spacing: 0.2em;
-  color: var(--gold-hi);
-  text-indent: 0.2em;
+  font-family: "Songti SC", "SimSun", "Noto Serif SC", serif;
+  font-size: 20px;
+  font-weight: 400;
+  letter-spacing: 0.46em;
+  text-indent: 0.46em;
+  color: rgba(232, 224, 206, 0.34);
+  text-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.55),
+    0 -1px 0 rgba(255, 255, 255, 0.05);
 }
-.plaque small { display: block; margin-top: 2px; font-size: 10px; letter-spacing: 0.14em; color: rgba(160, 151, 136, 0.9); }
+.plaque small {
+  display: block;
+  margin-top: 4px;
+  font-size: 9px;
+  letter-spacing: 0.34em;
+  text-indent: 0.34em;
+  color: rgba(232, 224, 206, 0.20);
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.5);
+}
 
 /* 荷官：坐在桌子对面上沿，面前一只牌靴 */
 .dealer {
@@ -314,16 +341,25 @@ html, body {
 .chips i:nth-child(3) { background: radial-gradient(circle at 35% 30%, #dfefff, #5d86b0 60%, #26405a); }
 .seat.speaking .chips { opacity: 1; transform: translateY(-2px); }
 
-/* 名牌：铜牌 */
+/* 名牌：不做成贴标签的铜牌，只在名字下面压一条细金线 */
 .seat-name {
+  position: relative;
   font-size: 13px;
-  letter-spacing: 0.06em;
-  color: #f0e6d2;
-  padding: 1px 8px 2px;
-  border-radius: 3px;
-  background: linear-gradient(180deg, rgba(58, 42, 23, 0.9), rgba(32, 23, 14, 0.9));
-  border: 1px solid rgba(216, 178, 94, 0.32);
+  letter-spacing: 0.08em;
+  color: #efe3cb;
+  padding: 0 2px 4px;
   white-space: nowrap;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.75);
+}
+.seat-name::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 26px;
+  height: 1px;
+  transform: translateX(-50%);
+  background: linear-gradient(90deg, transparent, rgba(216, 178, 94, 0.55), transparent);
 }
 .seat-duty { font-size: 10px; color: rgba(160, 151, 136, 0.8); white-space: nowrap; }
 
