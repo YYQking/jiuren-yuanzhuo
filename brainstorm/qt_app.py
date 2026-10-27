@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 import sys
 
 from PySide6.QtCore import (
     QEasingCurve,
     QPoint,
+    QPointF,
     QPropertyAnimation,
     QRect,
     QRectF,
@@ -114,6 +116,289 @@ def avatar_pixmap(role_id: str, size: int) -> QPixmap:
     painter.end()
     pixmap.setDevicePixelRatio(float(ratio))
     return pixmap
+
+
+def _paint_line_icon(painter: QPainter, kind: str, box: QRectF, color: QColor) -> None:
+    """画 16px 的线条图标——用描边几何而不是字体符号，跨机器不会变方块。"""
+
+    pen = QPen(color, 1.5)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    painter.save()
+    painter.setPen(pen)
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    c = box.center()
+    r = box.width() / 2
+    if kind == "plus":
+        painter.drawEllipse(box.adjusted(0.8, 0.8, -0.8, -0.8))
+        painter.drawLine(
+            QPointF(c.x() - r * 0.45, c.y()), QPointF(c.x() + r * 0.45, c.y())
+        )
+        painter.drawLine(
+            QPointF(c.x(), c.y() - r * 0.45), QPointF(c.x(), c.y() + r * 0.45)
+        )
+    elif kind == "rotate":
+        arc = QRectF(c.x() - r * 0.8, c.y() - r * 0.8, r * 1.6, r * 1.6)
+        painter.drawArc(arc, 40 * 16, 280 * 16)
+        head = QPointF(c.x() + r * 0.66, c.y() - r * 0.44)
+        painter.drawLine(head, QPointF(head.x() - r * 0.42, head.y() - r * 0.10))
+        painter.drawLine(head, QPointF(head.x() + r * 0.02, head.y() + r * 0.44))
+    elif kind == "arrow":
+        painter.drawLine(
+            QPointF(c.x() - r * 0.72, c.y()), QPointF(c.x() + r * 0.72, c.y())
+        )
+        painter.drawLine(
+            QPointF(c.x() + r * 0.72, c.y()), QPointF(c.x() + r * 0.30, c.y() - r * 0.38)
+        )
+        painter.drawLine(
+            QPointF(c.x() + r * 0.72, c.y()), QPointF(c.x() + r * 0.30, c.y() + r * 0.38)
+        )
+    elif kind == "shuffle":
+        painter.drawLine(
+            QPointF(c.x() - r * 0.8, c.y() - r * 0.35), QPointF(c.x() + r * 0.55, c.y() - r * 0.35)
+        )
+        painter.drawLine(
+            QPointF(c.x() - r * 0.8, c.y() + r * 0.35), QPointF(c.x() + r * 0.55, c.y() + r * 0.35)
+        )
+        painter.drawLine(
+            QPointF(c.x() + r * 0.55, c.y() - r * 0.35), QPointF(c.x() + r * 0.25, c.y() - r * 0.6)
+        )
+        painter.drawLine(
+            QPointF(c.x() + r * 0.55, c.y() + r * 0.35), QPointF(c.x() + r * 0.25, c.y() + r * 0.62)
+        )
+    elif kind == "clock":
+        painter.drawEllipse(box.adjusted(1, 1, -1, -1))
+        painter.drawLine(QPointF(c.x(), c.y()), QPointF(c.x(), c.y() - r * 0.5))
+        painter.drawLine(QPointF(c.x(), c.y()), QPointF(c.x() + r * 0.42, c.y()))
+    elif kind == "radar":
+        for scale in (0.42, 0.72, 1.0):
+            painter.drawArc(
+                QRectF(
+                    c.x() - r * scale,
+                    c.y() - r * scale,
+                    r * scale * 2,
+                    r * scale * 2,
+                ),
+                20 * 16,
+                140 * 16,
+            )
+        painter.setBrush(color)
+        painter.drawEllipse(QPointF(c.x() + r * 0.18, c.y() - r * 0.18), 1.3, 1.3)
+    elif kind == "gear":
+        painter.drawEllipse(QRectF(c.x() - r * 0.42, c.y() - r * 0.42, r * 0.84, r * 0.84))
+        for angle in range(0, 360, 45):
+            radians = angle * 3.14159 / 180
+            inner = QPointF(
+                c.x() + r * 0.62 * math.cos(radians),
+                c.y() + r * 0.62 * math.sin(radians),
+            )
+            outer = QPointF(
+                c.x() + r * 0.95 * math.cos(radians),
+                c.y() + r * 0.95 * math.sin(radians),
+            )
+            painter.drawLine(inner, outer)
+    elif kind == "frame":
+        length = r * 0.42
+        for dx, dy in ((-1, -1), (1, -1), (-1, 1), (1, 1)):
+            corner = QPointF(c.x() + dx * r * 0.8, c.y() + dy * r * 0.8)
+            painter.drawLine(corner, QPointF(corner.x() - dx * length, corner.y()))
+            painter.drawLine(corner, QPointF(corner.x(), corner.y() - dy * length))
+    elif kind == "power":
+        arc = QRectF(c.x() - r * 0.78, c.y() - r * 0.78, r * 1.56, r * 1.56)
+        painter.drawArc(arc, 120 * 16, 300 * 16)
+        painter.drawLine(QPointF(c.x(), c.y() - r * 0.95), QPointF(c.x(), c.y() - r * 0.1))
+    else:  # dot
+        painter.setBrush(color)
+        painter.drawEllipse(c, 2.2, 2.2)
+    painter.restore()
+
+
+class ActionButton(QPushButton):
+    """大厅里那种"图标 + 文字 + 快捷键"的宽按钮。
+
+    不用 QPushButton，是因为要把图标和右侧的灰快捷键一起排进一个控件里，
+    顺便自己做 hover / 按下的手感。
+    """
+
+    clicked = Signal()
+
+    def __init__(
+        self,
+        text: str,
+        *,
+        kind: str = "dot",
+        hint: str = "",
+        primary: bool = False,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._text = text
+        self._kind = kind
+        self._hint = hint
+        self._primary = primary
+        self._hover = False
+        self._pressed = False
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setMinimumHeight(40)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+
+    # ── 外部可改的几项 ──────────────────────────────────────────
+    def text(self) -> str:
+        return self._text
+
+    def setText(self, text: str) -> None:  # noqa: N802 - Qt 命名习惯
+        self._text = text
+        self.updateGeometry()
+        self.update()
+
+    def set_hint(self, hint: str) -> None:
+        self._hint = hint
+        self.updateGeometry()
+        self.update()
+
+    def set_primary(self, primary: bool) -> None:
+        self._primary = primary
+        self.update()
+
+    def sizeHint(self) -> QSize:  # noqa: N802
+        metrics = QFontMetrics(self.font())
+        width = 36 + 16 + 9 + metrics.horizontalAdvance(self._text) + 16
+        if self._hint:
+            width += 10 + QFontMetrics(self._small_font()).horizontalAdvance(self._hint)
+        return QSize(width, 40)
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802
+        return self.sizeHint()
+
+    def _small_font(self):
+        font = self.font()
+        font.setPointSizeF(max(7.5, font.pointSizeF() * 0.82))
+        return font
+
+    # ── 交互 ────────────────────────────────────────────────────
+    def enterEvent(self, event) -> None:  # noqa: N802
+        self._hover = True
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event) -> None:  # noqa: N802
+        self._hover = False
+        self._pressed = False
+        self.update()
+        super().leaveEvent(event)
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._pressed = True
+            self.update()
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:  # noqa: N802
+        was_pressed = self._pressed
+        self._pressed = False
+        self.update()
+        if was_pressed and self.rect().contains(event.position().toPoint()):
+            self.clicked.emit()
+        super().mouseReleaseEvent(event)
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space):
+            self.clicked.emit()
+            return
+        super().keyPressEvent(event)
+
+    # ── 画 ──────────────────────────────────────────────────────
+    def paintEvent(self, event) -> None:  # noqa: N802
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        rect = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        if self._pressed:
+            rect.translate(0, 1)
+        radius = 9.0
+        if self._primary:
+            base = (
+                "#e0bd7c" if self._hover else "#d6b271"
+            )
+            if self._pressed:
+                base = "#c9a05e"
+            painter.setBrush(QColor(base))
+            painter.setPen(QPen(QColor("#f0d9a6" if self._hover else "#e3c78e"), 1))
+        else:
+            fill = QColor(26, 32, 27, 200) if not self._hover else QColor(34, 42, 36, 225)
+            if self._pressed:
+                fill = QColor(20, 25, 21, 235)
+            painter.setBrush(fill)
+            border = QColor(201, 164, 92, 70 if not self._hover else 120)
+            if self._pressed:
+                border = QColor(201, 164, 92, 90)
+            painter.setPen(QPen(border, 1))
+        painter.drawRoundedRect(rect, radius, radius)
+
+        text_color = QColor("#241d12") if self._primary else QColor(COLORS["cream"] if self._hover else "#ded6c6")
+        hint_color = (
+            QColor(36, 29, 18, 150) if self._primary else QColor(COLORS["muted"])
+            if self._hover
+            else QColor(COLORS["dim"])
+        )
+
+        icon_box = QRectF(rect.left() + 15, rect.center().y() - 8, 16, 16)
+        _paint_line_icon(painter, self._kind, icon_box, text_color)
+
+        label_rect = QRectF(
+            icon_box.right() + 9,
+            rect.top(),
+            rect.width() - (icon_box.right() - rect.left()) - 9 - 14,
+            rect.height(),
+        )
+        painter.setPen(text_color)
+        painter.setFont(self.font())
+        painter.drawText(
+            label_rect, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, self._text
+        )
+        if self._hint:
+            small = self._small_font()
+            painter.setFont(small)
+            painter.setPen(hint_color)
+            metrics = QFontMetrics(small)
+            hint_width = metrics.horizontalAdvance(self._hint)
+            painter.drawText(
+                QRectF(
+                    rect.right() - 15 - hint_width,
+                    rect.top(),
+                    hint_width,
+                    rect.height(),
+                ),
+                Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
+                self._hint,
+            )
+        painter.end()
+
+
+class CardFrame(QWidget):
+    """给大厅套一层细铜边 + 四角小括号，让它看起来像个正经软件。"""
+
+    def paintEvent(self, event) -> None:  # noqa: N802
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        rect = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.setPen(QPen(QColor(201, 164, 92, 46), 1))
+        painter.drawRoundedRect(rect, 14, 14)
+        pen = QPen(QColor(201, 164, 92, 120), 1.2)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        painter.setPen(pen)
+        length = 16.0
+        gap = 12.0
+        corners = (
+            (rect.left() + gap, rect.top() + gap, 1, 1),
+            (rect.right() - gap, rect.top() + gap, -1, 1),
+            (rect.left() + gap, rect.bottom() - gap, 1, -1),
+            (rect.right() - gap, rect.bottom() - gap, -1, -1),
+        )
+        for x, y, dx, dy in corners:
+            painter.drawLine(QPointF(x, y), QPointF(x + dx * length, y))
+            painter.drawLine(QPointF(x, y), QPointF(x, y + dy * length))
+        painter.end()
 
 
 # 所以在发言卡片上直接用一句人话解释，而不是让人去猜或去翻说明。
@@ -290,6 +575,8 @@ class SeatCard(QPushButton):
             portrait.setText(role.name[:1])
             portrait.setStyleSheet("font-size: 26px; color: #2b2417;")
         portrait.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.portrait = portrait
+        self._avatar_side = 72
         layout.addWidget(portrait, 0, Qt.AlignmentFlag.AlignHCenter)
 
         self.name_label = QLabel(card_name(role.name))
@@ -376,6 +663,14 @@ class SeatCard(QPushButton):
         if abs(factor - self._scale) < 0.01:
             return
         self._scale = factor
+        # 头像也得跟着缩，不然牌一矮名字就被头像压住
+        side = max(38, min(72, round(72 * factor)))
+        if side != getattr(self, "_avatar_side", 72):
+            self._avatar_side = side
+            self.portrait.setFixedSize(side, side)
+            picture = avatar_pixmap(self.role.id, side)
+            if not picture.isNull():
+                self.portrait.setPixmap(picture)
         self.name_label.setFixedHeight(max(20, round(34 * factor)))
         self.tag_label.setFixedHeight(max(20, round(40 * factor)))
         self.set_down_style(bool(self.property("down")))
@@ -403,14 +698,22 @@ class LobbyPage(QWidget):
         self._pending_layout.setSingleShot(True)
         self._pending_layout.timeout.connect(lambda: self._layout_cards(animate=False))
         self._build()
+        self.topic.returnPressed.connect(self._start)
         self.set_mode("business")
 
     # ── 结构 ────────────────────────────────────────────────────────
     def _build(self) -> None:
         self.setObjectName("lobbyPage")
-        outer = QVBoxLayout(self)
+        page = QVBoxLayout(self)
+        page.setSizeConstraint(QLayout.SizeConstraint.SetNoConstraint)
+        page.setContentsMargins(14, 12, 14, 12)
+        page.setSpacing(0)
+        self.frame = CardFrame()
+        self.frame.setObjectName("lobbyFrame")
+        page.addWidget(self.frame)
+        outer = QVBoxLayout(self.frame)
         outer.setSizeConstraint(QLayout.SizeConstraint.SetNoConstraint)
-        outer.setContentsMargins(48, 26, 48, 22)
+        outer.setContentsMargins(34, 20, 34, 16)
         outer.setSpacing(14)
 
         header = QHBoxLayout()
@@ -428,19 +731,19 @@ class LobbyPage(QWidget):
             " border: 1px solid #40584a; border-radius: 12px; font-size: 11px;"
         )
         header.addWidget(self.source_badge)
-        self.history_button = QPushButton("最近讨论")
+        self.history_button = ActionButton("最近讨论", kind="clock")
         self.history_button.clicked.connect(self.history_requested)
         header.addWidget(self.history_button)
-        self.hotspots_button = QPushButton("社会热点雷达")
+        self.hotspots_button = ActionButton("社会热点雷达", kind="radar")
         self.hotspots_button.clicked.connect(self.hotspots_requested)
         header.addWidget(self.hotspots_button)
-        self.ai_settings_button = QPushButton("AI 设置")
+        self.ai_settings_button = ActionButton("AI 设置", kind="gear")
         self.ai_settings_button.clicked.connect(self.ai_settings_requested)
         header.addWidget(self.ai_settings_button)
-        self.window_button = QPushButton("窗口化")
+        self.window_button = ActionButton("窗口化", kind="frame", hint="Esc")
         self.window_button.clicked.connect(self.window_mode_requested)
         header.addWidget(self.window_button)
-        self.exit_button = QPushButton("退出")
+        self.exit_button = ActionButton("退出", kind="power", hint="Esc")
         self.exit_button.clicked.connect(self.exit_requested)
         header.addWidget(self.exit_button)
         outer.addLayout(header)
@@ -492,7 +795,7 @@ class LobbyPage(QWidget):
         self.topic.setMinimumHeight(40)
         slip_layout.addWidget(self.topic)
         slip_row.addWidget(slip, 1)
-        self.example_button = QPushButton("换一个")
+        self.example_button = ActionButton("换一个", kind="shuffle")
         self.example_button.clicked.connect(
             lambda: self.topic.setText(SECTION_TEXT[self.mode]["example_topic"])
         )
@@ -519,12 +822,17 @@ class LobbyPage(QWidget):
 
         footer = QHBoxLayout()
         footer.setSpacing(10)
-        self.deal_button = QPushButton("发 牌")
+        self.deal_button = ActionButton("发 牌", kind="rotate", hint="")
         self.deal_button.setObjectName("dealButton")
+        self.deal_button.setMinimumHeight(44)
         self.deal_button.clicked.connect(self._deal)
         footer.addWidget(self.deal_button)
-        self.start_button = QPushButton(SECTION_TEXT["business"]["start_button"])
-        self.start_button.setProperty("primary", True)
+        self.start_button = ActionButton(
+            SECTION_TEXT["business"]["start_button"].replace(" →", "").strip(),
+            kind="arrow",
+            hint="Enter",
+            primary=True,
+        )
         self.start_button.setMinimumHeight(46)
         self.start_button.clicked.connect(self._start)
         footer.addWidget(self.start_button)
@@ -718,7 +1026,7 @@ class LobbyPage(QWidget):
         self.hotspots_button.setText("热点" if narrow else "社会热点雷达")
         self.ai_settings_button.setText("设置" if narrow else "AI 设置")
         self.window_button.setText("窗口" if narrow else "窗口化")
-        self.source.setFixedHeight(34 if compact else 46)
+        self.source.setFixedHeight(44 if compact else 46)
         self.topic.setMinimumHeight(32 if compact else 40)
         self.network_note.setVisible(self.height() >= 700)
         self.bottom_note.setVisible(self.height() >= 660)
