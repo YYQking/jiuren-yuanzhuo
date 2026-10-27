@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>九人圆桌 · 剧场夜（原型 S1）</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body data-face="yang">
+
+<div class="stage" id="stage">
+
+  <!-- 顶栏：这是哪张桌、聊的什么事、走到第几条 -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="mark">九人圆桌</span>
+      <span class="divider"></span>
+      <span class="table-name" id="tableName">八卦桌 · 事件讨论</span>
+    </div>
+    <h1 class="topic" id="topic">…</h1>
+    <div class="counter">
+      <span id="counter">第 0 / 0 条</span>
+      <span class="hint" id="hint">点一下开始</span>
+    </div>
+  </header>
+
+  <!-- 主持人不在桌上，声音从上方来 -->
+  <div class="voiceover" id="voiceover" aria-hidden="true">
+    <span class="vo-label">主持人 · 画外音</span>
+    <span class="vo-line"></span>
+  </div>
+
+  <!-- 舞台：一圈席位围着一张桌子 -->
+  <main class="floor">
+    <svg class="replies" id="replies" aria-hidden="true"></svg>
+    <div class="table" id="table">
+      <div class="table-glow"></div>
+      <div class="table-plate">
+        <span class="plate-phase" id="platePhase">各自开口</span>
+        <span class="plate-count" id="plateCount">8 人围坐</span>
+      </div>
+    </div>
+    <div class="seats" id="seats"></div>
+  </main>
+
+  <!-- 说话卡片：一句一条，像有人在说 -->
+  <section class="speech" id="speech" aria-live="polite">
+    <div class="speech-head">
+      <span class="who" id="who">—</span>
+      <span class="face-chip" id="faceChip"></span>
+      <span class="intent-chip" id="intentChip"></span>
+      <span class="reply-chip" id="replyChip"></span>
+      <span class="wave" id="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+    </div>
+    <div class="speech-body" id="body"></div>
+    <div class="speech-foot">
+      <span class="legend">
+        <b class="c-solid">我确定</b>
+        <b class="c-heard">我听说</b>
+        <b class="c-guess">我猜</b>
+      </span>
+      <span class="keys">点一下 / 空格 继续　← 回看上一句</span>
+    </div>
+  </section>
+
+  <footer class="notice">
+    这是网页原型：内容取自一场真实模型跑测的录像，不会实时生成，也不联网。
+  </footer>
+</div>
+
+<script src="data.js"></script>
+<script src="stage.js"></script>
+</body>
+</html>

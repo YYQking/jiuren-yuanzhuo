@@ -1,0 +1,344 @@
+/* S1「剧场夜」——暗场、聚光灯、只会亮起说话的那个人。
+   每个效果后面都标了「Qt 落地」，保证定稿后能搬回现在的 PySide6 程序。 */
+
+:root {
+  --ink: #e8e2d6;
+  --ink-dim: #9a938a;
+  --gold: #d9a558;
+  --gold-soft: rgba(217, 165, 88, 0.16);
+  --warm: 255, 196, 120;
+  --cool: 132, 176, 216;
+  --face: var(--warm);          /* 由 body[data-face] 切换：阳面暖、阴面冷 */
+  --bg: #08080a;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 整个舞台：中央一束光打下来，四周压暗。
+   Qt 落地：QSS 的 qlineargradient + 一个覆盖层 QWidget（attribute WA_TransparentForMouseEvents）。 */
+.stage {
+  position: relative;
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto auto 1fr auto auto;
+  padding: 22px 34px 16px;
+  background:
+    radial-gradient(120% 80% at 50% 30%, rgba(var(--face), 0.10), transparent 62%),
+    radial-gradient(90% 70% at 50% 120%, rgba(var(--face), 0.05), transparent 70%),
+    #08080a;
+  transition: background 900ms ease;   /* 翻面时整屋的色温慢慢变 */
+}
+
+/* 顶上极淡的颗粒/暗角，让画面不"平" */
+.stage::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(60% 50% at 50% 42%, transparent 40%, rgba(0, 0, 0, 0.55) 100%);
+}
+
+/* ── 顶栏 ───────────────────────────────────────────── */
+.topbar {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: baseline;
+  gap: 18px;
+  position: relative;
+  z-index: 3;
+}
+
+.brand { display: flex; align-items: baseline; gap: 10px; white-space: nowrap; }
+.mark { font-size: 13px; letter-spacing: 0.22em; color: var(--gold); }
+.divider { width: 1px; height: 12px; background: rgba(255, 255, 255, 0.18); }
+.table-name { font-size: 13px; color: var(--ink-dim); letter-spacing: 0.08em; }
+
+.topic {
+  margin: 0;
+  font-family: "Songti SC", "SimSun", "Noto Serif SC", serif;
+  font-size: 17px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: #f0e9dc;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.counter {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  font-size: 12px;
+  color: var(--ink-dim);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.hint { color: var(--gold); opacity: 0.85; }
+
+/* ── 画外音（主持人）───────────────────────────────── */
+.voiceover {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0 4px;
+  opacity: 0.28;
+  transition: opacity 260ms ease;
+}
+.voiceover.active { opacity: 1; }
+.vo-label {
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  color: var(--gold);
+  border: 1px solid rgba(217, 165, 88, 0.35);
+  border-radius: 999px;
+  padding: 3px 10px;
+  white-space: nowrap;
+}
+.vo-line {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(217, 165, 88, 0.5), transparent);
+}
+
+/* ── 舞台与席位 ─────────────────────────────────────── */
+.floor {
+  position: relative;
+  min-height: 0;
+  z-index: 2;
+}
+
+.table {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 46%;
+  height: 54%;
+  transform: translate(-50%, -50%) scale(0.92);
+  opacity: 0;
+  transition: transform 700ms ease, opacity 700ms ease;
+}
+.table.in { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+
+.table-glow {
+  position: absolute;
+  inset: -18%;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(var(--face), 0.20), transparent 72%);
+  filter: blur(6px);
+  transition: background 900ms ease;
+}
+
+.table-plate {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background:
+    radial-gradient(closest-side, rgba(255, 255, 255, 0.045), transparent 78%),
+    linear-gradient(160deg, rgba(255, 255, 255, 0.03), rgba(0, 0, 0, 0.35));
+  box-shadow: inset 0 0 60px rgba(0, 0, 0, 0.6), 0 30px 80px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.plate-phase {
+  font-family: "Songti SC", "SimSun", serif;
+  font-size: 26px;
+  letter-spacing: 0.24em;
+  color: rgba(240, 233, 220, 0.72);
+  text-indent: 0.24em;
+}
+.plate-count { font-size: 11px; letter-spacing: 0.16em; color: var(--ink-dim); }
+
+.seats { position: absolute; inset: 0; }
+
+/* 一张席位：头像 + 名字 + 面别光环
+   Qt 落地：QToolButton(圆形头像) + QLabel，光环用 QGraphicsDropShadowEffect 的 color/blurRadius。 */
+.seat {
+  position: absolute;
+  width: 92px;
+  margin: -46px 0 0 -46px;      /* 以中心定位 */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  opacity: 0;
+  transform: translateY(10px) scale(0.96);
+  transition: opacity 420ms ease, transform 420ms ease, filter 500ms ease;
+}
+.seat.in { opacity: 1; transform: none; }
+.seat.dim { filter: brightness(0.42) saturate(0.6); }
+
+.seat-face {
+  position: relative;
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  background: #121216;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  transition: border-color 500ms ease, box-shadow 500ms ease, transform 320ms ease;
+}
+.seat-face img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  display: block;
+  opacity: 0.85;
+  transition: opacity 400ms ease;
+}
+
+/* 阳面：暖金环；阴面：冷青环——翻面时肉眼能看出"这个人变了"。 */
+.seat[data-face="yang"] .seat-face {
+  border-color: rgba(var(--warm), 0.85);
+  box-shadow: 0 0 0 1px rgba(var(--warm), 0.28), 0 0 24px rgba(var(--warm), 0.34);
+}
+.seat[data-face="yin"] .seat-face {
+  border-color: rgba(var(--cool), 0.8);
+  box-shadow: 0 0 0 1px rgba(var(--cool), 0.22), 0 0 22px rgba(var(--cool), 0.28);
+}
+.seat[data-face="yin"] .seat-face img { filter: grayscale(0.35) contrast(1.05); opacity: 0.75; }
+
+.seat.speaking .seat-face { transform: scale(1.06); }
+.seat.speaking[data-face="yang"] .seat-face { box-shadow: 0 0 0 2px rgba(var(--warm), 0.6), 0 0 46px rgba(var(--warm), 0.65); }
+.seat.speaking[data-face="yin"] .seat-face { box-shadow: 0 0 0 2px rgba(var(--cool), 0.6), 0 0 44px rgba(var(--cool), 0.6); }
+.seat.speaking .seat-face img { opacity: 1; }
+
+.seat-name { font-size: 13px; letter-spacing: 0.06em; color: #ded6c8; white-space: nowrap; }
+.seat-duty { font-size: 10px; color: rgba(154, 147, 138, 0.75); white-space: nowrap; }
+.seat-trigram {
+  position: absolute;
+  left: 50%;
+  bottom: -18px;
+  transform: translateX(-50%);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: rgba(217, 165, 88, 0.75);
+  white-space: nowrap;
+}
+
+/* ── 回应连线：谁在回谁 ─────────────────────────────── */
+.replies { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.replies path {
+  fill: none;
+  stroke: rgba(217, 165, 88, 0.55);
+  stroke-width: 1.2;
+  stroke-dasharray: 5 5;
+  animation: dash 900ms linear infinite;
+}
+.replies path.cool { stroke: rgba(var(--cool), 0.55); }
+@keyframes dash { to { stroke-dashoffset: -20; } }
+
+/* ── 说话卡片 ───────────────────────────────────────── */
+.speech {
+  position: relative;
+  z-index: 3;
+  width: min(1040px, 82%);
+  margin: 0 auto;
+  padding: 18px 26px 12px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(20, 20, 24, 0.92), rgba(14, 14, 17, 0.92));
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  box-shadow: 0 26px 70px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 360ms ease, transform 360ms ease;
+}
+.speech.in { opacity: 1; transform: none; }
+
+.speech-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.who { font-size: 15px; letter-spacing: 0.04em; color: #f4ecdd; }
+.face-chip, .intent-chip, .reply-chip {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.face-chip[data-face="yang"] { color: #ffcf8e; border: 1px solid rgba(var(--warm), 0.45); background: rgba(var(--warm), 0.10); }
+.face-chip[data-face="yin"]  { color: #a8cbe8; border: 1px solid rgba(var(--cool), 0.45); background: rgba(var(--cool), 0.10); }
+.intent-chip { color: var(--ink-dim); border: 1px solid rgba(255, 255, 255, 0.12); }
+.reply-chip { color: rgba(217, 165, 88, 0.9); border: 1px solid rgba(217, 165, 88, 0.3); }
+.reply-chip:empty, .face-chip:empty, .intent-chip:empty { display: none; }
+
+.wave { display: inline-flex; align-items: flex-end; gap: 3px; height: 14px; margin-left: 4px; opacity: 0; transition: opacity 200ms; }
+.wave.on { opacity: 1; }
+.wave i {
+  width: 2px; height: 4px; border-radius: 1px;
+  background: rgba(var(--face), 0.9);
+  animation: talk 620ms ease-in-out infinite;
+}
+.wave i:nth-child(2) { animation-delay: 90ms; }
+.wave i:nth-child(3) { animation-delay: 180ms; }
+.wave i:nth-child(4) { animation-delay: 60ms; }
+.wave i:nth-child(5) { animation-delay: 240ms; }
+@keyframes talk { 0%, 100% { height: 4px; } 50% { height: 13px; } }
+
+.speech-body {
+  font-size: 19px;
+  line-height: 1.95;
+  letter-spacing: 0.015em;
+  color: #ece5d8;
+  max-height: 33vh;
+  overflow: auto;
+  scrollbar-width: thin;
+}
+/* 一句一句浮现：像真的在说话，而不是"啪"整段贴上去。
+   Qt 落地：QLabel 富文本 + QPropertyAnimation(opacity)，或用 QTimer 逐句 append 到 QTextEdit。 */
+.sent { opacity: 0; transform: translateY(4px); transition: opacity 320ms ease, transform 320ms ease; }
+.sent.in { opacity: 1; transform: none; }
+
+/* 置信度着色：确定＝实心、听说＝琥珀、猜＝灰 */
+.c-solid { color: #b9e3c4; font-weight: 600; }
+.c-heard { color: #f0c98a; font-weight: 600; }
+.c-guess { color: #b9b3aa; font-weight: 600; font-style: normal; }
+
+.speech-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 11px;
+  color: rgba(154, 147, 138, 0.8);
+}
+.legend b { font-weight: 600; margin-right: 10px; }
+.keys { white-space: nowrap; }
+
+.notice {
+  position: relative;
+  z-index: 3;
+  margin-top: 10px;
+  text-align: center;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: rgba(154, 147, 138, 0.55);
+}
+
+/* 窄屏时把席位缩小，别挤成一团 */
+@media (max-width: 1100px) {
+  .seat { width: 78px; margin: -39px 0 0 -39px; }
+  .seat-face { width: 52px; height: 52px; }
+  .speech-body { font-size: 17px; }
+  .plate-phase { font-size: 20px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 1ms !important; transition-duration: 1ms !important; }
+}
