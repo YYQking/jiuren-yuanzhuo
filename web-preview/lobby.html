@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>九人圆桌 · 大厅</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="lobby.css">
+</head>
+<body data-face="yang">
+<div class="lobby">
+
+  <header class="lobby-top">
+    <div class="brand"><span class="mark">九人圆桌</span></div>
+    <p class="lobby-say">挑一张桌子坐进去。进去之前只有一件事要做：说清楚要聊什么。</p>
+  </header>
+
+  <!-- 两张桌子：选一张 -->
+  <section class="rooms" aria-label="选桌">
+    <button class="room" data-mode="business" type="button">
+      <span class="room-felt"><span class="room-seats" data-seats="9"></span></span>
+      <span class="room-head">
+        <b class="room-name">商业痛点桌</b>
+        <span class="room-sub">九个人，盯一件事能不能做成</span>
+      </span>
+    </button>
+
+    <button class="room is-on" data-mode="event" type="button">
+      <span class="room-felt"><span class="room-seats" data-seats="8"></span></span>
+      <span class="room-head">
+        <b class="room-name">八卦桌</b>
+        <span class="room-sub">八个人，各有各的脾气，先阳面后阴面</span>
+      </span>
+    </button>
+  </section>
+
+  <!-- 议题：像写在一张牌上 -->
+  <section class="composer">
+    <label class="composer-label" for="topicInput">这一桌聊什么</label>
+    <div class="composer-line">
+      <input id="topicInput" class="topic-input" type="text" spellcheck="false"
+             value="某小区物业把业主的固定车位转租给了外面的人，业主群吵了一整天">
+      <button class="dice" id="diceBtn" type="button" title="换一个例子">换一个</button>
+    </div>
+    <p class="composer-hint" id="composerHint">写得越具体，桌上越有的聊。带上时间、地点、谁跟谁吵。</p>
+  </section>
+
+  <!-- 这一桌的人 -->
+  <section class="table-seats">
+    <div class="seats-head">
+      <span class="seats-title">这一桌的人</span>
+      <span class="seats-note" id="seatsNote">八个人，各带两面</span>
+    </div>
+    <div class="seat-strip" id="seatStrip"></div>
+  </section>
+
+  <!-- 最近聊过的几桌：让大厅有"来过"的痕迹，也是回到上一桌的入口 -->
+  <section class="recent">
+    <div class="seats-head">
+      <span class="seats-title">最近聊过</span>
+      <span class="seats-note">点一条回到那一桌</span>
+    </div>
+    <div class="rec-strip">
+      <button class="rec" type="button">
+        <span class="rec-tag">八卦桌</span>
+        <b class="rec-topic">一家奶茶店被拍到后厨有蟑螂，店主说是同行陷害</b>
+        <span class="rec-line">吵得最凶的是"谁主张谁举证"；实锤只有那段视频；接下来看监管通报。</span>
+        <span class="rec-when">昨晚 22:41 · 20 条</span>
+      </button>
+      <button class="rec" type="button">
+        <span class="rec-tag">商业痛点桌</span>
+        <b class="rec-topic">餐馆装了三个月点单小程序，又换回纸菜单</b>
+        <span class="rec-line">机会方向：把"改菜单"做成不用培训的一步；风险：老板换回去的成本比学更低。</span>
+        <span class="rec-when">前天 20:15 · 21 条</span>
+      </button>
+      <button class="rec" type="button">
+        <span class="rec-tag">八卦桌</span>
+        <b class="rec-topic">网红餐厅排队两小时，隔壁桌是同一个老板开的店</b>
+        <span class="rec-line">还只是传言：没有工商信息佐证；八个人里五个当场翻成阴面。</span>
+        <span class="rec-when">周一 19:02 · 18 条</span>
+      </button>
+    </div>
+  </section>
+
+  <footer class="lobby-foot">
+    <button class="start" id="startBtn" type="button">
+      <span class="start-main">开桌</span>
+      <span class="start-sub" id="startSub">八卦桌 · 8 人 · 约 20 条</span>
+    </button>
+    <button class="ghost" id="hotspotBtn" type="button">从今天的新闻里挑一个</button>
+  </footer>
+</div>
+
+<script src="lobby.js"></script>
+</body>
+</html>

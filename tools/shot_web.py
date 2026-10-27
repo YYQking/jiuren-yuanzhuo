@@ -32,7 +32,11 @@ def main() -> int:
 
     app = QApplication(sys.argv[:1])
     view = QWebEngineView()
-    view.resize(1600, 1000)
+    size = (1600, 1000)
+    if "--size" in sys.argv:
+        w, h = sys.argv[sys.argv.index("--size") + 1].lower().split("x")
+        size = (int(w), int(h))
+    view.resize(*size)
     view.show()
 
     def step(i: int) -> None:
