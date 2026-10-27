@@ -556,7 +556,26 @@ class QtUiTests(unittest.TestCase):
         page._utterance(session.utterances[0], 0, 1)
         self.assertEqual(page.section_label.text(), "八卦桌 · 事件讨论")
         self.assertTrue(page.section_label.isVisibleTo(page))
-        self.assertIn("乾明 · 阳面", page.transcript.toPlainText())
+        self.assertIn("乾明 · 脸色：正常", page.transcript.toPlainText())
+
+    def test_business_seat_has_no_mood_dots(self):
+        """商业席位不搞阴阳两面，牌上就不该有任何脸色标记。"""
+        lobby = LobbyPage(self.store)
+        lobby.mode_buttons["business"].click()
+        chip = next(item for item in lobby.role_chips if item.role.id == "builder")
+        self.assertFalse(chip.mark.isVisibleTo(chip))
+        self.assertEqual(chip.mark.text(), "")
+
+    def test_event_seat_shows_a_three_dot_temper(self):
+        """八卦桌的脸色用三颗点表示，不写「阳/阴」这两个开关词。"""
+        lobby = LobbyPage(self.store)
+        lobby.mode_buttons["event"].click()
+        chip = next(item for item in lobby.role_chips if item.role.id == "qian")
+        self.assertTrue(chip.mark.isVisibleTo(chip))
+        self.assertIn("●", chip.mark.text())
+        chip.set_mood(-1)
+        self.assertIn("96302c", chip.mark.text())
+        chip.set_mood(0)
 
     def test_business_roundtable_hides_the_event_badge(self):
         page = RoundtablePage(self.controller)

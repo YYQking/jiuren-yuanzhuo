@@ -68,6 +68,7 @@ from .models import DiscussionSession, Role, Utterance, ViewpointKind
 from .hotspot_page import HotspotPage
 from .hotspots import HotspotCache, HotspotProvider, default_hotspot_feeds
 from .model_hotspots import HybridHotspotProvider, ModelHotspotProvider
+from .mood import mood_label, mood_of
 from .providers import resolve_providers
 from .qt_theme import COLORS, app_stylesheet, title_font
 from .roles import DEFAULT_ROLES, ROLES_BY_MODE, SECTION_TEXT, default_roles_for, face_label
@@ -603,18 +604,21 @@ class SeatCard(QPushButton):
         layout.addWidget(self.tag_label)
         layout.addStretch(1)
 
-        self.mark = QLabel("阳")
+        # 脸色：三颗点，不写「阳/阴」。商业席不摆脸色，只有八卦桌的牌才显示。
+        self.mark = QLabel()
+        self.mark.setTextFormat(Qt.TextFormat.RichText)
         self.mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.mark.setFixedSize(22, 17)
+        self.mark.setFixedSize(34, 17)
         self.mark.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-        self.mark.setStyleSheet(
-            "font-size: 9px; color: #f6ecd8; background: #96302c; border-radius: 3px;"
-        )
         mark_row = QHBoxLayout()
         mark_row.setContentsMargins(0, 0, 0, 0)
         mark_row.addStretch(1)
         mark_row.addWidget(self.mark)
         layout.addLayout(mark_row)
+        if getattr(role, "trigram", ""):
+            self.set_mood(0)
+        else:
+            self.mark.hide()
 
         # 牌还没发的时候盖一张牌背：中间压一个「九」字
         self.back = QLabel("九", self)
@@ -643,6 +647,22 @@ class SeatCard(QPushButton):
         super().resizeEvent(event)
         self.back.setGeometry(0, 0, self.width(), self.height())
 
+    def set_mood(self, mood: int) -> None:
+        """脸色三颗点：红是挂脸，金是心情好，暗金是正常；点数列表示轻重。"""
+        if not getattr(self.role, "trigram", ""):
+            self.mark.hide()
+            return
+        self.mark.show()
+        filled = 1 if mood <= -2 else 2 if mood <= 0 else 3
+        tone = "#96302c" if mood < 0 else ("#caa96a" if mood > 0 else "#9a8b6d")
+        dots = "".join(
+            f'<span style="color:{tone};">●</span>' if index < filled
+            else '<span style="color:#5b5244;">○</span>'
+            for index in range(3)
+        )
+        self.mark.setText(dots)
+        self.mark.setToolTip(f"脸色：{mood_label(mood)}")
+
     def set_down_style(self, down: bool) -> None:
         """牌翻过去：底变暗、字变灰，跟“还在桌上”的牌一眼分得开。"""
         self.setProperty("down", down)
@@ -655,7 +675,6 @@ class SeatCard(QPushButton):
             f" font-size: {name_size}px; color: {name_color};"
         )
         self.tag_label.setStyleSheet(f"font-size: {tag_size}px; color: {tag_color};")
-        self.mark.setText("翻" if down else "阳")
         style = self.style()
         style.unpolish(self)
         style.polish(self)
@@ -1469,12 +1488,28 @@ class RoundtablePage(QWidget):
             return ""
         return f" · 质检重写：{utterance.review_note}"
 
+    def _face_note(self, utterance: Utterance) -> str:
+        """一条发言当时的脸色，用账本倒推，不写「阳面/阴面」这种开关词。"""
+        if not utterance.face:
+            return ""
+        if self.session is None:
+            return f" · {face_label(utterance.face)}"
+        index = next(
+            (position for position, item in enumerate(self.session.utterances)
+             if item.event_id == utterance.event_id),
+            None,
+        )
+        if index is None:
+            return f" · {face_label(utterance.face)}"
+        mood = mood_of(self.session.utterances[:index], utterance.speaker_id)
+        return f" · 脸色：{mood_label(mood)}"
+
     def _transcript_line(self, utterance: Utterance) -> str:
         """Render one recorded turn; live turns and reopened history use this same form."""
         source = self.session.utterance_source(utterance) if self.session else "未标记来源"
         intent = f" · {utterance.intent}" if utterance.intent and utterance.intent != "initial" else ""
         stance = " · 改变立场" if utterance.stance_change else ""
-        face = f" · {face_label(utterance.face)}" if utterance.face else ""
+        face = self._face_note(utterance)
         return (
             f"【{utterance.phase}】 {utterance.speaker_name}{face} · {utterance.kind.value}"
             f"{intent}{stance}{self._reply_label(utterance)}{self._intervention_label(utterance)} · {source}"
@@ -1504,7 +1539,7 @@ class RoundtablePage(QWidget):
         if compact and len(content) > 140:
             content = content[:140] + "…（全文见记录）"
         labels = f"{self._reply_label(utterance)}{self._intervention_label(utterance)}"
-        face = f" · {face_label(utterance.face)}" if utterance.face else ""
+        face = self._face_note(utterance)
         self._set_bubble(f"{utterance.speaker_name}{face}  ·  {kind_label(utterance.kind)}{labels}  ·  {source}\n{content}", kind_legend())
 
     def _state(self, state: str) -> None:

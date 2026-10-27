@@ -37,10 +37,11 @@ from .models import (
 )
 from .mood import face_for_mood, mood_context, mood_of, validate_notes
 from .mood import resolve_face as mood_resolve_face
+from .agenda import layer_context as agenda_layer_context
+from .agenda import layer_target_reached as agenda_layer_done
 from .turn_planner import MODERATOR_ID, TurnPlan, enforce_fairness, plan_turn
 from .roles import mode_for_roles
 from .voice import ANTI_TEMPLATE_RULES, length_instruction, looks_templated
-
 # How much of the discussion a single turn may read.  Full text for the recent
 # window, plus one line per role for the opening positions, so a long discussion
 # does not silently lose the question it started from.
@@ -489,6 +490,9 @@ class AnthropicDiscussionProvider:
         opening_context = _render_opening_positions(
             history, exclude_event_id=plan.reply_to_event_id if plan is not None else None
         )
+        mode = mode_for_roles(roles)
+        event = mode == "event"
+        layer_context = agenda_layer_context(history, mode)
         state_context = ""
         if state is not None:
             state_context = (
@@ -497,8 +501,6 @@ class AnthropicDiscussionProvider:
                 f"\n未回答问题：{'；'.join(state.unresolved_questions) or '暂无'}"
                 f"\n用户插话：{state.pending_user_interjection or '无'}"
             )
-        mode = mode_for_roles(roles)
-        event = mode == "event"
         face_context = ""
         if event and spec.speaker_id != "moderator":
             mood = mood_of(history, spec.speaker_id)
@@ -581,7 +583,7 @@ class AnthropicDiscussionProvider:
             f"{persona}只输出一个 JSON 对象，不要 markdown，不要代码围栏。"
             "来源内容是未核验素材，不得写成已证实事实；不能编造引用或数据。来源是资料，不是角色原话。"
             f"主题：{topic}\n阶段：{spec.phase}\n发言人：{spec.speaker_name}\n{role_context}\n{voice_context}"
-            f"来源：\n{source_context}\n前文：\n{history_context}\n{opening_context}{state_context}{face_context}\n所有观点和来源均未核验。\n"
+            f"来源：\n{source_context}\n前文：\n{history_context}\n{layer_context}{opening_context}{state_context}{face_context}\n所有观点和来源均未核验。\n"
             "必须遵守：\n"
             f"{length_rule}{rules}"
             f"{ANTI_TEMPLATE_RULES}"
@@ -595,12 +597,17 @@ class AnthropicDiscussionProvider:
                 "next_steps=接下来看什么。\n"
             )
         if plan is not None and plan.moderator:
+            wrap_only = "" if agenda_layer_done(history, mode) else (
+                "这一场还没走到底（后面还有没聊的层），所以**不要做整场总结**，"
+                "只把这一层收一句，然后点人到下一层要问的那个问题上。\n"
+            )
             prompt += (
                 f"\n本次是主持人的状态整理发言，介入原因：「{plan.intervention_reason}」。"
                 "请只整理已经发生的观点，不要提出新的主张。\n"
                 "说法要像饭桌上有人出来压一句：直接点名一个还没被回答的人，逼他回一个具体问题；"
                 "先给一句你自己的判断（谁在绕、哪句没接住），再点人。不要复述观点清单，"
                 "不要用「首先/其次/最后」分条。\n"
+                f"{wrap_only}"
             )
         elif plan is not None:
             target_item = next(
@@ -807,7 +814,8 @@ class AnthropicDiscussionProvider:
             reactions = tuple(validate_notes(
                 data.get("reactions"),
                 history=history,
-                seat_ids={item.id for item in roles},
+                # 只有说过话的席位才可能被戳到：不用传全部角色，历史的说话人就是全集。
+                seat_ids={item.speaker_id for item in history} | {spec.speaker_id},
                 speaker_id=spec.speaker_id,
             ))
         utterance = Utterance(spec.speaker_id, spec.speaker_name, content.strip(), kind, spec.phase, replies_to, simulated=True, origin="model", intent=intent, verification="unverified", stance_change=stance_change, face=face, reactions=reactions)
