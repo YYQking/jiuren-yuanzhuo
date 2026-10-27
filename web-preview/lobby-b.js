@@ -30,8 +30,9 @@ function buildDeck() {
     card.style.setProperty('--dx', '0px');
     card.style.setProperty('--dy', '0px');
     card.style.setProperty('--rot', '0deg');
-    // 叠着的时候：每张错开一点点，像手里攥着一副牌
-    card.style.transform = `translate(${i * 0.8 - 3}px, ${i * -1.2}px) rotate(${(i - 3) * 0.5}deg)`;
+    // 叠着的时候：每张错开一点、各转一点点，像手里攥着一副牌
+    card.style.transform =
+      `translate(${i * 2.6 - 9}px, ${i * -3.2 + 10}px) rotate(${(i - 3.5) * 1.1}deg)`;
     card.innerHTML = `
       <div class="face">
         <img src="../assets/avatars/${id}.svg" alt="">

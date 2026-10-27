@@ -1,1 +1,40 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><circle cx="64" cy="64" r="62" fill="#1c2145"/><path d="M24 108c5-24 19-35 40-35s35 11 40 35" fill="#6366f1" fill-opacity="0.55"/><circle cx="64" cy="49" r="24" fill="#d9a98e"/><path d="M39 46c3-24 46-29 52 1-10-8-28-10-52-1z" fill="#2f2a26"/><path d="M43 111h42l-7-27H50z" fill="#6366f1"/><circle cx="55" cy="50" r="3" fill="#172c47"/><circle cx="73" cy="50" r="3" fill="#172c47"/><path d="M56 62q8 6 16 0" fill="none" stroke="#8e594c" stroke-width="3"/><rect x="90" y="74" width="11" height="5" rx="2.5" fill="#f5e6c8" fill-opacity="0.82"/><rect x="105" y="74" width="11" height="5" rx="2.5" fill="#f5e6c8" fill-opacity="0.82"/><rect x="90" y="83" width="26" height="5" rx="2.5" fill="#f5e6c8" fill-opacity="0.82"/><rect x="90" y="92" width="11" height="5" rx="2.5" fill="#f5e6c8" fill-opacity="0.82"/><rect x="105" y="92" width="11" height="5" rx="2.5" fill="#f5e6c8" fill-opacity="0.82"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-hidden="true">
+<defs>
+<radialGradient id="bg" cx="50%" cy="32%" r="74%">
+<stop offset="0%" stop-color="#27323f"/><stop offset="100%" stop-color="#141a22"/>
+</radialGradient>
+<linearGradient id="shade" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0%" stop-color="#000" stop-opacity="0.05"/>
+<stop offset="100%" stop-color="#000" stop-opacity="0.34"/>
+</linearGradient>
+<radialGradient id="warm" cx="50%" cy="50%" r="50%">
+<stop offset="0%" stop-color="#f0d9a6" stop-opacity="0.20"/>
+<stop offset="100%" stop-color="#f0d9a6" stop-opacity="0"/>
+</radialGradient>
+</defs>
+<circle cx="64" cy="64" r="63" fill="url(#bg)"/>
+<circle cx="64" cy="58" r="46" fill="url(#warm)"/>
+<circle cx="64" cy="64" r="62.2" fill="none" stroke="#c9a45c" stroke-opacity="0.26"/>
+<path d="M12 128c3-31 25-46 52-46s49 15 52 46z" fill="#2f4a7a"/>
+<path d="M12 128c3-31 25-46 52-46s49 15 52 46z" fill="url(#shade)"/>
+<path d="M52 84l12 17 12-17-12-4z" fill="#22395e"/>
+<path d="M34 100c2-14 13-21 30-21s28 7 30 21z" fill="#1d2f4c"/>
+<path d="M39 106c0-10 9-15 25-15s25 5 25 15" fill="none" stroke="#142136" stroke-width="3"/>
+<path d="M43 47c0-15 9-24 21-24s21 9 21 24c-2-6-5-9-8-9-3 3-7 3-11 1-4-2-8-2-11 0s-8 4-12 8z" fill="#26221e"/>
+<path d="M47 26l-3 8 5-2 2 7 4-8 3 7 3-7 4 7 3-7 4 6 3-6 2 8" fill="none" stroke="#26221e" stroke-width="3" stroke-linejoin="round"/>
+<path d="M55 74h18v15a9 9 0 0 1-18 0z" fill="#b58d70"/>
+<circle cx="42" cy="56" r="4.6" fill="#c69b7b"/>
+<circle cx="86" cy="56" r="4.6" fill="#c69b7b"/>
+<ellipse cx="64" cy="53" rx="22" ry="25" fill="#d3a583"/>
+<ellipse cx="52" cy="62" rx="6.5" ry="4" fill="#c49979" opacity="0.55"/>
+<ellipse cx="76" cy="62" rx="6.5" ry="4" fill="#c49979" opacity="0.55"/>
+<ellipse cx="64" cy="70" rx="12" ry="4.5" fill="#000" opacity="0.10"/>
+<path d="M43 47c0-15 9-24 21-24s21 9 21 24c-2-6-5-9-8-9-3 3-7 3-11 1-4-2-8-2-11 0s-8 4-12 8z" fill="#26221e"/>
+<path d="M47 26l-3 8 5-2 2 7 4-8 3 7 3-7 4 7 3-7 4 6 3-6 2 8" fill="none" stroke="#26221e" stroke-width="3" stroke-linejoin="round"/>
+<path d="M50 62c1 8 5 13 14 13s13-5 14-13c-2 6-7 9-14 9s-12-3-14-9z" fill="#3b2f28" opacity="0.35"/>
+<path d="M49 40.9L59 45.06" stroke="#2a2320" stroke-width="2.4" stroke-linecap="round"/><path d="M69 45.06L79 40.9" stroke="#2a2320" stroke-width="2.4" stroke-linecap="round"/>
+<path d="M48.0 47.04q6.0 -2.4 12.0 0" fill="none" stroke="#241f1c" stroke-width="1.6" stroke-linecap="round" stroke-opacity="0.75"/><ellipse cx="54" cy="51.6" rx="4.6" ry="4.4" fill="#241f1c"/><circle cx="55.2" cy="49.8" r="1.1" fill="#fff" fill-opacity="0.92"/>
+<path d="M68.0 47.04q6.0 -2.4 12.0 0" fill="none" stroke="#241f1c" stroke-width="1.6" stroke-linecap="round" stroke-opacity="0.75"/><ellipse cx="74" cy="51.6" rx="4.6" ry="4.4" fill="#241f1c"/><circle cx="75.2" cy="49.8" r="1.1" fill="#fff" fill-opacity="0.92"/>
+<path d="M64 55v5.5l-2.2 1.8" fill="none" stroke="#a9705c" stroke-width="1.5" stroke-linecap="round" stroke-opacity="0.9"/>
+<path d="M57.8 63.5q6.2 -0.8 12.4 0" fill="none" stroke="#8e594c" stroke-width="2.3" stroke-linecap="round"/>
+</svg>
