@@ -35,7 +35,7 @@ function buildDeck() {
       `translate(${i * 2.6 - 9}px, ${i * -3.2 + 10}px) rotate(${(i - 3.5) * 1.1}deg)`;
     card.innerHTML = `
       <div class="face">
-        <img src="../assets/avatars/${id}.svg" alt="">
+        <img src="../assets/avatars/${id}.png" alt="">
         <span class="nm">${name}</span>
         <span class="gua">${tag}</span>
         <span class="mark">阳</span>

@@ -83,7 +83,7 @@ function boot() {
     node.className = 'seat';
     node.dataset.face = 'yang';
     node.innerHTML = `
-      <div class="seat-face"><img src="../assets/avatars/${seat.id}.svg" alt=""></div>
+      <div class="seat-face"><img src="../assets/avatars/${seat.id}.png" alt=""></div>
       <div class="chips"><i></i><i></i><i></i></div>
       <span class="seat-name">${seat.name}</span>
       <span class="seat-duty">${seat.duty}</span>

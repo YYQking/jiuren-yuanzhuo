@@ -76,7 +76,7 @@ function renderSeats() {
     chip.className = 'seat-chip is-on';
     chip.type = 'button';
     chip.innerHTML = `
-      <img src="../assets/avatars/${id}.svg" alt="">
+      <img src="../assets/avatars/${id}.png" alt="">
       <span class="nm">${name}</span>
       <span class="tag">${tag}</span>`;
     chip.addEventListener('click', () => chip.classList.toggle('is-on'));

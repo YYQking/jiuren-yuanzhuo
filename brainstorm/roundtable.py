@@ -7,7 +7,16 @@ import sys
 from pathlib import Path
 
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QLinearGradient, QPainter, QPainterPath, QPen, QRadialGradient
+from PySide6.QtGui import (
+    QColor,
+    QFont,
+    QLinearGradient,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QPixmap,
+    QRadialGradient,
+)
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QToolTip, QWidget
 
@@ -39,6 +48,12 @@ class RoundtableCanvas(QWidget):
         self._avatar_renderers = {
             role.id: QSvgRenderer(str(self._avatar_dir / f"{role.id}.svg"))
             for role in roles
+        }
+        # 有成品位图就用位图（生成/手绘的头像），没有才退回 SVG
+        self._avatar_pixmaps = {
+            role.id: QPixmap(str(self._avatar_dir / f"{role.id}.png"))
+            for role in roles
+            if (self._avatar_dir / f"{role.id}.png").exists()
         }
 
     def set_state(self, topic: str | None = None, status: str | None = None, active_id: str | None = None) -> None:
@@ -134,8 +149,18 @@ class RoundtableCanvas(QWidget):
         painter.setBrush(QColor(role.color))
         avatar_rect = QRectF(point.x() - radius, point.y() - radius, radius * 2, radius * 2)
         painter.drawEllipse(avatar_rect)
+        avatar = self._avatar_pixmaps.get(role.id)
         renderer = self._avatar_renderers.get(role.id)
-        if renderer and renderer.isValid():
+        if avatar is not None and not avatar.isNull():
+            painter.save()
+            painter.setClipPath(self._circle_path(point, radius))
+            painter.drawPixmap(
+                QRectF(avatar_rect).toRect(),
+                avatar,
+                avatar.rect(),
+            )
+            painter.restore()
+        elif renderer and renderer.isValid():
             painter.save()
             painter.setClipPath(self._circle_path(point, radius))
             renderer.render(painter, avatar_rect)

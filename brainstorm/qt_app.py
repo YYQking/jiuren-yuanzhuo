@@ -73,10 +73,11 @@ from .storage import SessionStore
 
 
 def avatar_pixmap(role_id: str, size: int) -> QPixmap:
-    """把头像 SVG 画成圆形位图。
+    """把头像画成圆形位图。
 
-    Qt 的 SVG 渲染器不认 clipPath，直接显示会是一个方块色块；
-    所以在外面套一层圆形裁剪，顺带按 2x 出图避免糊。
+    优先用位图头像（assets/avatars/<id>.png，手绘/生成的成品），
+    没有再退回 SVG。Qt 的 SVG 渲染器不认 clipPath，直接显示会是一个
+    方块色块；所以统一在外面套一层圆形裁剪，并按 2x 出图避免糊。
     """
 
     ratio = 2
@@ -88,16 +89,28 @@ def avatar_pixmap(role_id: str, size: int) -> QPixmap:
         if getattr(sys, "frozen", False)
         else Path(__file__).resolve().parent.parent
     )
-    renderer = QSvgRenderer(str(root / "assets" / "avatars" / f"{role_id}.svg"))
-    if not renderer.isValid():
-        return pixmap
+    folder = root / "assets" / "avatars"
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
     painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
     circle = QPainterPath()
     circle.addEllipse(0.0, 0.0, float(side), float(side))
     painter.setClipPath(circle)
-    renderer.render(painter, QRectF(0.0, 0.0, float(side), float(side)))
+    png_path = folder / f"{role_id}.png"
+    drawn = False
+    if png_path.exists():
+        source = QPixmap(str(png_path))
+        if not source.isNull():
+            painter.drawPixmap(
+                QRect(0, 0, side, side),
+                source,
+                source.rect(),
+            )
+            drawn = True
+    if not drawn:
+        renderer = QSvgRenderer(str(folder / f"{role_id}.svg"))
+        if renderer.isValid():
+            renderer.render(painter, QRectF(0.0, 0.0, float(side), float(side)))
     painter.end()
     pixmap.setDevicePixelRatio(float(ratio))
     return pixmap
