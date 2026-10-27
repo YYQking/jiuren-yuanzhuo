@@ -1,16 +1,16 @@
-/* S1「赌桌」—— 绿绒桌面、金边、筹码、暗牌。
-   每个效果后面标了「Qt 落地」，保证定稿后能搬回现在的 PySide6 程序。 */
+/* 赌桌版原型样式。
+   设计原则：少即是贵——只用一个金色做点缀，其余靠层次和留白；边框一律细线，不用粗描边。
+   每个关键效果后面标了「Qt 落地」，定稿后能照搬回 PySide6。 */
 
 :root {
   --ink: #efe7d7;
-  --ink-dim: #a09788;
-  --gold: #d8b25e;
-  --gold-hi: #f2d79a;
+  --ink-dim: #9e9689;
+  --ink-faint: #6d675e;
+  --gold: #c9a45c;
+  --gold-hi: #f0d9a6;
   --warm: 255, 198, 122;
   --cool: 126, 172, 214;
   --face: var(--warm);
-  --felt-1: #11503a;
-  --felt-2: #072a1e;
 }
 
 * { box-sizing: border-box; }
@@ -18,35 +18,31 @@
 html, body {
   height: 100%;
   margin: 0;
-  background: #080605;
+  background: #070605;
   color: var(--ink);
   font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
 }
 
-/* 赌场房间：整体极暗，桌子正上方一盏灯，地面有点暗红地毯的意思。
-   Qt 落地：QSS qlineargradient 叠加一个不吃鼠标的覆盖层 QWidget。 */
+/* 房间：极暗，桌子正上方一盏灯，地面一点暗红。 */
 .stage {
   position: relative;
   height: 100%;
   display: grid;
   grid-template-rows: auto auto 1fr auto auto;
-  padding: 20px 32px 14px;
+  padding: 22px 34px 16px;
   background:
-    radial-gradient(58% 42% at 50% 34%, rgba(255, 214, 150, 0.16), transparent 66%),
-    radial-gradient(120% 90% at 50% 116%, rgba(90, 26, 20, 0.55), transparent 62%),
-    radial-gradient(80% 60% at 50% 8%, rgba(60, 40, 20, 0.35), transparent 70%),
-    #080605;
+    radial-gradient(54% 40% at 50% 33%, rgba(255, 216, 156, 0.14), transparent 68%),
+    radial-gradient(120% 86% at 50% 118%, rgba(84, 24, 18, 0.5), transparent 60%),
+    #070605;
 }
-
-/* 灯罩下的暗角，画面不"平" */
 .stage::after {
   content: "";
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background: radial-gradient(58% 46% at 50% 40%, transparent 42%, rgba(0, 0, 0, 0.62) 100%);
+  background: radial-gradient(56% 44% at 50% 39%, transparent 44%, rgba(0, 0, 0, 0.6) 100%);
 }
 
 /* ── 顶栏 ───────────────────────────────────────────── */
@@ -56,24 +52,39 @@ html, body {
   display: grid;
   grid-template-columns: auto 1fr auto;
   align-items: baseline;
-  gap: 16px;
+  gap: 18px;
 }
-.brand { display: flex; align-items: baseline; gap: 9px; white-space: nowrap; }
+.brand { display: flex; align-items: center; gap: 10px; white-space: nowrap; }
+/* 品牌标记做成一枚筹码的样子，比纯文字有做工感 */
+.brand::before {
+  content: "";
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background:
+    repeating-conic-gradient(from 0deg,
+      rgba(201, 164, 92, 0.85) 0deg 12deg,
+      rgba(30, 22, 13, 0.9) 12deg 24deg);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6), 0 2px 6px rgba(0, 0, 0, 0.5);
+  margin-right: 2px;
+}
 .mark {
-  font-size: 12px;
-  letter-spacing: 0.22em;
+  font-family: "Songti SC", "SimSun", serif;
+  font-size: 13px;
+  letter-spacing: 0.34em;
   color: var(--gold-hi);
-  text-shadow: 0 0 14px rgba(242, 215, 154, 0.35);
+  text-shadow: 0 0 18px rgba(240, 217, 166, 0.3);
 }
-.divider { width: 1px; height: 11px; background: rgba(255, 255, 255, 0.2); }
-.table-name { font-size: 12px; color: var(--ink-dim); letter-spacing: 0.08em; }
+.divider { width: 1px; height: 11px; background: rgba(255, 255, 255, 0.16); }
+.table-name { font-size: 11px; color: var(--ink-faint); letter-spacing: 0.2em; }
 
 .topic {
   margin: 0;
   font-family: "Songti SC", "SimSun", "Noto Serif SC", serif;
-  font-size: 17px;
-  font-weight: 500;
-  color: #f4ecdb;
+  font-size: 18px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  color: #f2e9d8;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -81,13 +92,14 @@ html, body {
 .counter {
   display: flex;
   align-items: baseline;
-  gap: 12px;
-  font-size: 12px;
-  color: var(--ink-dim);
+  gap: 14px;
+  font-size: 11px;
+  color: var(--ink-faint);
   white-space: nowrap;
+  letter-spacing: 0.06em;
   font-variant-numeric: tabular-nums;
 }
-.hint { color: var(--gold); }
+.hint { color: rgba(201, 164, 92, 0.9); }
 
 /* ── 荷官画外音 ─────────────────────────────────────── */
 .voiceover {
@@ -96,21 +108,20 @@ html, body {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 0 2px;
-  opacity: 0.26;
-  transition: opacity 260ms ease;
+  padding: 9px 0 2px;
+  opacity: 0.22;
+  transition: opacity 280ms ease;
 }
 .voiceover.active { opacity: 1; }
 .vo-label {
   font-size: 10px;
-  letter-spacing: 0.16em;
-  color: var(--gold-hi);
-  border: 1px solid rgba(216, 178, 94, 0.4);
-  border-radius: 4px;
-  padding: 3px 9px;
+  letter-spacing: 0.2em;
+  color: rgba(240, 217, 166, 0.85);
+  border-left: 1px solid rgba(201, 164, 92, 0.6);
+  padding-left: 8px;
   white-space: nowrap;
 }
-.vo-line { flex: 1; height: 1px; background: linear-gradient(90deg, rgba(216, 178, 94, 0.5), transparent); }
+.vo-line { flex: 1; height: 1px; background: linear-gradient(90deg, rgba(201, 164, 92, 0.34), transparent); }
 
 /* ── 桌面 ───────────────────────────────────────────── */
 .floor { position: relative; min-height: 0; z-index: 2; }
@@ -121,57 +132,70 @@ html, body {
   top: 50%;
   width: 48%;
   height: 56%;
-  transform: translate(-50%, -50%) scale(0.9);
+  transform: translate(-50%, -50%) scale(0.92);
   opacity: 0;
-  transition: transform 760ms cubic-bezier(.2,.8,.2,1), opacity 760ms ease;
+  transition: transform 800ms cubic-bezier(.2,.8,.2,1), opacity 800ms ease;
 }
 .table.in { transform: translate(-50%, -50%) scale(1); opacity: 1; }
 
-/* 桌沿：厚皮革包边 + 两道金线。绿绒缩在里面，形成一圈边。 */
+/* 桌沿：皮革包边。两道细金线 + 一圈缝线，不做粗描边。 */
 .rail {
   position: absolute;
   inset: 0;
   border-radius: 50%;
-  background: radial-gradient(closest-side, #34200f, #1a0f07 76%, #120a05);
+  background:
+    repeating-conic-gradient(from 0deg,
+      rgba(255, 255, 255, 0.022) 0deg 6deg,
+      rgba(0, 0, 0, 0.03) 6deg 12deg),
+    radial-gradient(closest-side, #3a2414, #1d1108 74%, #140b06);
   box-shadow:
-    0 0 0 2px rgba(242, 215, 154, 0.75),
-    0 0 0 12px #241608,
-    0 0 0 14px rgba(216, 178, 94, 0.6),
-    0 0 0 16px rgba(0, 0, 0, 0.5),
-    0 30px 74px rgba(0, 0, 0, 0.66),
-    inset 0 4px 12px rgba(255, 255, 255, 0.08);
+    0 0 0 1px rgba(240, 217, 166, 0.45),
+    0 0 0 13px #241608,
+    0 0 0 14px rgba(201, 164, 92, 0.45),
+    0 0 0 17px rgba(0, 0, 0, 0.55),
+    0 34px 80px rgba(0, 0, 0, 0.68),
+    inset 0 5px 14px rgba(255, 255, 255, 0.07);
+}
+/* 缝线：一圈虚线，压在桌沿内侧 */
+.rail::after {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  border-radius: 50%;
+  border: 1px dashed rgba(240, 217, 166, 0.16);
 }
 
 /* 绿绒：中间亮、边缘沉，叠一层极淡的绒面颗粒 */
 .felt {
   position: absolute;
-  inset: 17px;
+  inset: 16px;
   border-radius: 50%;
   background:
     url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='g'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='120' height='120' filter='url(%23g)' opacity='0.5'/></svg>") 0 0 / 120px 120px,
-    radial-gradient(closest-side, #1a6b50 0%, #0d4531 62%, #072319 100%);
+    radial-gradient(closest-side, #1b6e52 0%, #0d4a34 58%, #07271c 100%);
   background-blend-mode: overlay, normal;
   box-shadow:
-    inset 0 0 76px rgba(0, 0, 0, 0.52),
+    inset 0 0 82px rgba(0, 0, 0, 0.5),
     inset 0 2px 0 rgba(255, 255, 255, 0.07);
 }
-.felt::after {                              /* 绒面上那层柔光 */
+.felt::after {
   content: "";
   position: absolute;
   inset: 0;
   border-radius: 50%;
-  background: radial-gradient(58% 50% at 50% 32%, rgba(255, 255, 255, 0.13), transparent 72%);
+  background: radial-gradient(52% 44% at 50% 30%, rgba(255, 255, 255, 0.12), transparent 74%);
 }
 
-/* 下注线：一圈虚线，把中央底池框出来 */
+/* 下注线：一根极淡的细椭圆，不用虚线（虚线像施工图） */
 .bet-line {
   position: absolute;
-  inset: 15%;
+  inset: 13%;
   border-radius: 50%;
-  border: 1px dashed rgba(216, 178, 94, 0.32);
+  border: 1px solid rgba(240, 217, 166, 0.10);
+  box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.14);
 }
 
-/* 中央底池：筹码越堆越高，牌匾上写着当前阶段 */
+/* 中央底池：只有筹码堆 + 织进绒面的阶段字 */
 .pot {
   position: absolute;
   left: 50%;
@@ -180,99 +204,88 @@ html, body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   pointer-events: none;
 }
-.pot-chips { display: flex; align-items: flex-end; gap: 3px; height: 26px; }
+.pot-chips { display: flex; align-items: flex-end; gap: 2px; height: 22px; }
 .pot-chips i {
   display: block;
-  width: 15px;
-  height: 15px;
+  width: 13px;
+  height: 13px;
   border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, #ffe9b8, #d9a53f 58%, #8a5f16);
+  background: radial-gradient(circle at 36% 30%, #ffeec8, #cf9c42 58%, #7f5712);
   border: 1px solid rgba(0, 0, 0, 0.45);
-  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.5), inset 0 0 0 2px rgba(255, 255, 255, 0.22);
-  animation: chip-in 320ms cubic-bezier(.2,.9,.2,1);
+  box-shadow: 0 3px 5px rgba(0, 0, 0, 0.5), inset 0 0 0 2px rgba(255, 255, 255, 0.2);
+  animation: chip-in 340ms cubic-bezier(.2,.9,.2,1);
 }
-.pot-chips i.cool { background: radial-gradient(circle at 35% 30%, #dcecff, #7ea9d6 58%, #2f5476); }
+.pot-chips i.cool { background: radial-gradient(circle at 36% 30%, #e6f1ff, #7ea9d6 58%, #2b4d6d); }
 @keyframes chip-in {
-  from { transform: translateY(-22px) scale(0.7); opacity: 0; }
+  from { transform: translateY(-24px) scale(0.7); opacity: 0; }
   to { transform: none; opacity: 1; }
 }
 
-/* 桌面中间不挂铜牌——那样像贴了张标签。改成"绒面织进去的字"：
-   不带边框、不用亮金，字体压深、字距拉开、带一点点凹凸，像真桌布上织出来的花纹。 */
+/* 阶段文字：像桌布上织出来的花纹——无边框、压深、字距拉开、带一点凹凸 */
 .pot::before {
   content: "";
   position: absolute;
   left: 50%;
-  top: calc(50% - 6px);
-  width: 132px;
-  height: 74px;
+  top: calc(50% - 2px);
+  width: 128px;
+  height: 70px;
   transform: translate(-50%, -50%);
   border-radius: 50%;
-  border: 1px solid rgba(216, 178, 94, 0.14);
-  box-shadow: inset 0 0 0 4px rgba(0, 0, 0, 0.10);
+  border: 1px solid rgba(240, 217, 166, 0.10);
   pointer-events: none;
 }
-
-.plaque {
-  padding: 0;
-  background: none;
-  border: 0;
-  box-shadow: none;
-  text-align: center;
-  white-space: nowrap;
-}
+.plaque { padding: 0; background: none; border: 0; box-shadow: none; text-align: center; white-space: nowrap; }
 .plaque span {
   display: block;
   font-family: "Songti SC", "SimSun", "Noto Serif SC", serif;
-  font-size: 20px;
-  font-weight: 400;
-  letter-spacing: 0.46em;
-  text-indent: 0.46em;
-  color: rgba(232, 224, 206, 0.34);
-  text-shadow:
-    0 1px 1px rgba(0, 0, 0, 0.55),
-    0 -1px 0 rgba(255, 255, 255, 0.05);
+  font-size: 19px;
+  letter-spacing: 0.5em;
+  text-indent: 0.5em;
+  color: rgba(236, 228, 210, 0.32);
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.6), 0 -1px 0 rgba(255, 255, 255, 0.045);
 }
 .plaque small {
   display: block;
-  margin-top: 4px;
+  margin-top: 5px;
   font-size: 9px;
-  letter-spacing: 0.34em;
-  text-indent: 0.34em;
-  color: rgba(232, 224, 206, 0.20);
-  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.5);
+  letter-spacing: 0.36em;
+  text-indent: 0.36em;
+  color: rgba(236, 228, 210, 0.18);
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.55);
 }
 
-/* 荷官：坐在桌子对面上沿，面前一只牌靴 */
+/* 荷官：桌子对面上沿一只牌靴 */
 .dealer {
   position: absolute;
   left: 50%;
-  top: -26px;
+  top: -24px;
   transform: translateX(-50%);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  opacity: 0.75;
-  transition: opacity 300ms ease, transform 300ms ease;
+  gap: 5px;
+  opacity: 0.62;
+  transition: opacity 320ms ease, transform 320ms ease;
 }
 .dealer.active { opacity: 1; transform: translateX(-50%) translateY(-3px); }
 .dealer .shoe {
-  width: 34px;
-  height: 22px;
-  border-radius: 3px;
-  background: linear-gradient(180deg, #6d1f1f, #33100f);
-  border: 1px solid rgba(216, 178, 94, 0.5);
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  position: relative;
+  width: 30px;
+  height: 20px;
+  border-radius: 2px 6px 3px 3px;
+  background: linear-gradient(168deg, #7a2222, #3a0f0e 70%);
+  border: 1px solid rgba(201, 164, 92, 0.4);
+  box-shadow: 0 5px 12px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  clip-path: polygon(0 0, 100% 14%, 100% 100%, 0 100%);
 }
 .dealer b {
-  font-size: 10px;
-  letter-spacing: 0.16em;
-  color: rgba(216, 178, 94, 0.85);
-  font-weight: 500;
+  font-size: 9px;
+  letter-spacing: 0.22em;
+  color: rgba(201, 164, 92, 0.75);
+  font-weight: 400;
 }
 
 /* ── 席位 ───────────────────────────────────────────── */
@@ -288,89 +301,130 @@ html, body {
   gap: 5px;
   opacity: 0;
   transform: translateY(10px) scale(0.96);
-  transition: opacity 420ms ease, transform 420ms ease, filter 520ms ease;
+  transition: opacity 440ms ease, transform 440ms ease, filter 540ms ease;
 }
 .seat.in { opacity: 1; transform: none; }
-.seat.dim { filter: brightness(0.4) saturate(0.55); }
+.seat.dim { filter: brightness(0.42) saturate(0.55); }
 
-/* 头像：金圈包着，像牌桌上的人像筹码 */
+/* 每个人在桌面上落一点影子，人才像"站在那儿"而不是浮着。
+   用 ::before 而不是 ::after，这样它天然排在头像下面，不会被压到别处去。 */
+.seat::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -14px;
+  width: 74px;
+  height: 16px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(0, 0, 0, 0.5), transparent 72%);
+  pointer-events: none;
+}
+
+/* 头像包成一枚筹码：外圈是筹码压纹边，内圈是牌桌的暗色。
+   Qt 落地：画一个圆形 QLabel 背景（repeating-conic-gradient 换成 QConicalGradient 分段）。 */
 .seat-face {
   position: relative;
-  width: 58px;
-  height: 58px;
+  width: 56px;
+  height: 56px;
   border-radius: 50%;
-  background: radial-gradient(circle at 40% 30%, #1b1b20, #0a0a0d);
-  border: 2px solid rgba(255, 255, 255, 0.10);
-  transition: border-color 520ms ease, box-shadow 520ms ease, transform 320ms ease;
+  isolation: isolate;
 }
-.seat-face img { width: 100%; height: 100%; border-radius: 50%; display: block; opacity: 0.88; transition: opacity 400ms ease, filter 500ms ease; }
+.seat-face::before {
+  content: "";
+  position: absolute;
+  inset: -7px;
+  border-radius: 50%;
+  background: repeating-conic-gradient(from 0deg,
+    rgba(201, 164, 92, 0.9) 0deg 7deg,
+    rgba(26, 18, 11, 0.95) 7deg 14deg);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.6), 0 9px 20px rgba(0, 0, 0, 0.55);
+  transition: background 520ms ease, box-shadow 520ms ease;
+  z-index: 0;
+}
+.seat-face::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  background: #0a0a0d;
+  z-index: 1;
+}
+.seat-face img {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  display: block;
+  opacity: 0.9;
+  transition: opacity 400ms ease, filter 520ms ease;
+}
 
-.seat[data-face="yang"] .seat-face {
-  border-color: rgba(var(--warm), 0.9);
-  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.5), 0 0 22px rgba(var(--warm), 0.32);
+/* 阳面：暖金筹码边；阴面：冷青筹码边 */
+.seat[data-face="yang"] .seat-face::before {
+  background: repeating-conic-gradient(from 0deg,
+    rgba(255, 198, 122, 0.92) 0deg 7deg,
+    rgba(26, 18, 11, 0.95) 7deg 14deg);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.6), 0 0 20px rgba(255, 198, 122, 0.22), 0 9px 20px rgba(0, 0, 0, 0.55);
 }
-.seat[data-face="yin"] .seat-face {
-  border-color: rgba(var(--cool), 0.85);
-  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.5), 0 0 20px rgba(var(--cool), 0.3);
+.seat[data-face="yin"] .seat-face::before {
+  background: repeating-conic-gradient(from 0deg,
+    rgba(126, 172, 214, 0.9) 0deg 7deg,
+    rgba(14, 20, 26, 0.95) 7deg 14deg);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.6), 0 0 18px rgba(126, 172, 214, 0.2), 0 9px 20px rgba(0, 0, 0, 0.55);
 }
-.seat[data-face="yin"] .seat-face img { filter: grayscale(0.3) contrast(1.06); opacity: 0.7; }
+.seat[data-face="yin"] .seat-face img { filter: grayscale(0.3) contrast(1.06); opacity: 0.72; }
 
-.seat.speaking .seat-face { transform: scale(1.07); }
-.seat.speaking[data-face="yang"] .seat-face { box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.5), 0 0 44px rgba(var(--warm), 0.62); }
-.seat.speaking[data-face="yin"] .seat-face { box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.5), 0 0 42px rgba(var(--cool), 0.58); }
+.seat.speaking .seat-face::before { transform: scale(1.05); }
+.seat.speaking[data-face="yang"] .seat-face::before { box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.6), 0 0 40px rgba(255, 198, 122, 0.55), 0 9px 20px rgba(0, 0, 0, 0.5); }
+.seat.speaking[data-face="yin"] .seat-face::before { box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.6), 0 0 38px rgba(126, 172, 214, 0.5), 0 9px 20px rgba(0, 0, 0, 0.5); }
 .seat.speaking .seat-face img { opacity: 1; }
 
-/* 每个人面前一小摞筹码 */
-.chips {
-  display: flex;
-  gap: 2px;
-  margin-top: -2px;
-  opacity: 0.85;
-  transition: opacity 300ms ease, transform 300ms ease;
-}
+/* 筹码摞：三枚硬币，带厚度 */
+.chips { display: flex; gap: 3px; margin-top: -1px; opacity: 0.9; transition: opacity 300ms ease, transform 300ms ease; }
 .chips i {
   display: block;
-  width: 12px;
-  height: 12px;
+  width: 11px;
+  height: 11px;
   border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, #ffe9b8, #c8993c 60%, #7c5612);
+  background: radial-gradient(circle at 36% 30%, #ffeec8, #c1873a 60%, #6f4b0f);
   border: 1px solid rgba(0, 0, 0, 0.5);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5), inset 0 0 0 2px rgba(255, 255, 255, 0.2);
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.55), inset 0 0 0 2px rgba(255, 255, 255, 0.18);
 }
-.chips i:nth-child(2) { background: radial-gradient(circle at 35% 30%, #ffd6d6, #b8483f 60%, #6d211c); }
-.chips i:nth-child(3) { background: radial-gradient(circle at 35% 30%, #dfefff, #5d86b0 60%, #26405a); }
+.chips i:nth-child(2) { background: radial-gradient(circle at 36% 30%, #ffdcdc, #b34a41 60%, #621c18); }
+.chips i:nth-child(3) { background: radial-gradient(circle at 36% 30%, #e4f1ff, #5b82ab 60%, #1f3346); }
 .seat.speaking .chips { opacity: 1; transform: translateY(-2px); }
 
-/* 名牌：不做成贴标签的铜牌，只在名字下面压一条细金线 */
+/* 名牌：只一行字 + 一道细金线，不做铜牌 */
 .seat-name {
   position: relative;
   font-size: 13px;
-  letter-spacing: 0.08em;
-  color: #efe3cb;
-  padding: 0 2px 4px;
+  letter-spacing: 0.1em;
+  color: #f0e5cd;
+  padding: 0 2px 5px;
   white-space: nowrap;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.75);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
 }
 .seat-name::after {
   content: "";
   position: absolute;
   left: 50%;
   bottom: 0;
-  width: 26px;
+  width: 24px;
   height: 1px;
   transform: translateX(-50%);
-  background: linear-gradient(90deg, transparent, rgba(216, 178, 94, 0.55), transparent);
+  background: linear-gradient(90deg, transparent, rgba(201, 164, 92, 0.5), transparent);
 }
-.seat-duty { font-size: 10px; color: rgba(160, 151, 136, 0.8); white-space: nowrap; }
+.seat-duty { font-size: 10px; letter-spacing: 0.02em; color: rgba(158, 150, 137, 0.78); white-space: nowrap; }
 
-/* 暗牌：平时牌背朝上，翻面时翻过来亮出"阴"。
-   Qt 落地：QPropertyAnimation 做 rotateY（Qt 里用 QTransform + 定时器分帧），或者干脆换成两张 QPixmap 轮换。 */
+/* 暗牌：平时牌背朝上，翻面时翻过来亮出"阴" */
 .card {
   position: absolute;
-  right: -12px;
-  top: 30px;
-  width: 26px;
-  height: 36px;
+  right: -10px;
+  top: 28px;
+  width: 24px;
+  height: 34px;
   perspective: 400px;
   pointer-events: none;
 }
@@ -379,134 +433,154 @@ html, body {
   width: 100%;
   height: 100%;
   transform-style: preserve-3d;
-  transition: transform 620ms cubic-bezier(.3,.9,.2,1);
+  transition: transform 640ms cubic-bezier(.3,.9,.2,1);
 }
 .card.flipped .card-inner { transform: rotateY(180deg); }
 .card-back, .card-front {
   position: absolute;
   inset: 0;
-  border-radius: 3px;
+  border-radius: 2px;
   backface-visibility: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
-  border: 1px solid rgba(216, 178, 94, 0.55);
+  font-size: 11px;
+  border: 1px solid rgba(201, 164, 92, 0.45);
   box-shadow: 0 5px 12px rgba(0, 0, 0, 0.55);
 }
 .card-back {
   background:
-    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.06) 0 2px, transparent 2px 5px),
-    linear-gradient(160deg, #5e1f1f, #2c0e0e);
-  color: rgba(242, 215, 154, 0.85);
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.05) 0 2px, transparent 2px 5px),
+    linear-gradient(160deg, #5b2020, #2a0e0e);
+  color: rgba(240, 217, 166, 0.7);
 }
 .card-front {
   transform: rotateY(180deg);
-  background: linear-gradient(160deg, #24405a, #0f1c28);
+  background: linear-gradient(160deg, #24405a, #0d1824);
   color: #a8cbe8;
-  font-weight: 600;
 }
 
 /* ── 回应连线 ───────────────────────────────────────── */
 .replies { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .replies path {
   fill: none;
-  stroke: rgba(216, 178, 94, 0.6);
-  stroke-width: 1.2;
-  stroke-dasharray: 5 5;
-  animation: dash 900ms linear infinite;
+  stroke: rgba(201, 164, 92, 0.5);
+  stroke-width: 1;
+  stroke-dasharray: 4 6;
+  animation: dash 1100ms linear infinite;
 }
-.replies path.cool { stroke: rgba(var(--cool), 0.6); }
+.replies path.cool { stroke: rgba(126, 172, 214, 0.5); }
 @keyframes dash { to { stroke-dashoffset: -20; } }
 
-/* ── 发言卡片 ───────────────────────────────────────── */
+/* ── 发言：一张压在桌沿的牌 ─────────────────────────── */
 .speech {
   position: relative;
   z-index: 4;
-  width: min(1020px, 80%);
+  width: min(1000px, 78%);
   margin: 0 auto;
-  padding: 16px 24px 10px;
-  border-radius: 10px;
-  background:
-    linear-gradient(180deg, rgba(26, 21, 15, 0.95), rgba(16, 13, 10, 0.96));
-  border: 1px solid rgba(216, 178, 94, 0.28);
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(242, 215, 154, 0.14);
+  padding: 18px 26px 11px;
+  border-radius: 4px;
+  background: linear-gradient(178deg, rgba(24, 20, 15, 0.96), rgba(13, 11, 8, 0.97));
+  border: 1px solid rgba(201, 164, 92, 0.16);
+  box-shadow:
+    0 26px 60px rgba(0, 0, 0, 0.62),
+    0 1px 0 rgba(255, 255, 255, 0.05) inset,
+    0 -1px 0 rgba(0, 0, 0, 0.6) inset;
   opacity: 0;
-  transform: translateY(14px);
+  transform: translateY(12px);
   transition: opacity 340ms ease, transform 340ms ease;
 }
 .speech.in { opacity: 1; transform: none; }
+/* 卡片上沿一线极淡的金，像纸边反光 */
+.speech::before {
+  content: "";
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(240, 217, 166, 0.35), transparent);
+}
 
-.speech-head { display: flex; align-items: center; gap: 9px; margin-bottom: 8px; flex-wrap: wrap; }
-.who { font-size: 15px; color: #f6eedd; letter-spacing: 0.03em; }
+.speech-head { display: flex; align-items: center; gap: 10px; margin-bottom: 9px; flex-wrap: wrap; }
+.who {
+  font-family: "Songti SC", "SimSun", serif;
+  font-size: 16px;
+  letter-spacing: 0.06em;
+  color: #f6eedc;
+}
 .face-chip, .intent-chip, .reply-chip {
   font-size: 10px;
-  letter-spacing: 0.1em;
-  padding: 2px 8px;
-  border-radius: 3px;
+  letter-spacing: 0.14em;
+  padding: 2px 0;
   white-space: nowrap;
 }
-.face-chip[data-face="yang"] { color: #ffd39a; border: 1px solid rgba(var(--warm), 0.45); background: rgba(var(--warm), 0.10); }
-.face-chip[data-face="yin"]  { color: #a8cbe8; border: 1px solid rgba(var(--cool), 0.45); background: rgba(var(--cool), 0.10); }
-.intent-chip { color: var(--ink-dim); border: 1px solid rgba(255, 255, 255, 0.12); }
-.reply-chip { color: rgba(216, 178, 94, 0.9); border: 1px solid rgba(216, 178, 94, 0.3); }
+.face-chip { padding: 2px 9px; border-radius: 2px; }
+.face-chip[data-face="yang"] { color: #ffd39a; background: rgba(255, 198, 122, 0.12); box-shadow: inset 0 0 0 1px rgba(255, 198, 122, 0.3); }
+.face-chip[data-face="yin"]  { color: #a8cbe8; background: rgba(126, 172, 214, 0.12); box-shadow: inset 0 0 0 1px rgba(126, 172, 214, 0.3); }
+.intent-chip { color: var(--ink-faint); }
+.intent-chip::before { content: "· "; }
+.reply-chip { color: rgba(201, 164, 92, 0.95); }
+.reply-chip::before { content: "↩ "; }
 .reply-chip:empty, .face-chip:empty, .intent-chip:empty { display: none; }
 
-.wave { display: inline-flex; align-items: flex-end; gap: 3px; height: 13px; margin-left: 2px; opacity: 0; transition: opacity 200ms; }
+.wave { display: inline-flex; align-items: flex-end; gap: 3px; height: 12px; opacity: 0; transition: opacity 200ms; }
 .wave.on { opacity: 1; }
 .wave i {
-  width: 2px; height: 4px; border-radius: 1px;
+  width: 2px; height: 3px; border-radius: 1px;
   background: rgba(var(--face), 0.9);
-  animation: talk 620ms ease-in-out infinite;
+  animation: talk 640ms ease-in-out infinite;
 }
 .wave i:nth-child(2) { animation-delay: 90ms; }
 .wave i:nth-child(3) { animation-delay: 180ms; }
 .wave i:nth-child(4) { animation-delay: 60ms; }
 .wave i:nth-child(5) { animation-delay: 240ms; }
-@keyframes talk { 0%, 100% { height: 4px; } 50% { height: 12px; } }
+@keyframes talk { 0%, 100% { height: 3px; } 50% { height: 11px; } }
 
 .speech-body {
   font-size: 19px;
-  line-height: 1.92;
+  line-height: 1.95;
   letter-spacing: 0.015em;
-  color: #ece4d5;
-  max-height: 32vh;
+  color: #eae2d2;
+  max-height: 31vh;
   overflow: auto;
   scrollbar-width: thin;
 }
-.sent { opacity: 0; transform: translateY(4px); transition: opacity 320ms ease, transform 320ms ease; }
+.sent { opacity: 0; transform: translateY(4px); transition: opacity 340ms ease, transform 340ms ease; }
 .sent.in { opacity: 1; transform: none; }
 
-.c-solid { color: #b6e0bf; font-weight: 600; }
-.c-heard { color: #f0c98a; font-weight: 600; }
-.c-guess { color: #b7b1a8; font-weight: 600; }
+.c-solid { color: #b7dfc0; font-weight: 600; }
+.c-heard { color: #eec989; font-weight: 600; }
+.c-guess { color: #b5afa6; font-weight: 600; }
 
 .speech-foot {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 16px;
-  margin-top: 8px;
-  padding-top: 7px;
-  border-top: 1px solid rgba(255, 255, 255, 0.07);
-  font-size: 11px;
-  color: rgba(160, 151, 136, 0.8);
+  margin-top: 9px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.055);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: rgba(158, 150, 137, 0.72);
 }
-.legend b { font-weight: 600; margin-right: 10px; }
-.keys { white-space: nowrap; }
+.legend b { font-weight: 500; margin-right: 12px; }
+.keys { white-space: nowrap; color: rgba(158, 150, 137, 0.6); }
 
 .notice {
   position: relative;
   z-index: 4;
-  margin: 8px 0 0;
+  margin: 9px 0 0;
   text-align: center;
-  font-size: 11px;
-  color: rgba(160, 151, 136, 0.5);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: rgba(158, 150, 137, 0.42);
 }
 
 @media (max-width: 1100px) {
   .seat { width: 78px; margin: -39px 0 0 -39px; }
-  .seat-face { width: 50px; height: 50px; }
+  .seat-face { width: 48px; height: 48px; }
   .speech-body { font-size: 17px; }
   .plaque span { font-size: 15px; }
 }
