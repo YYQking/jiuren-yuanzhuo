@@ -87,7 +87,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/deploy.ps1
 | `tests/` | 337 项测试 |
 | `tools/` | 打包、跑真实模型、生成说明书、截图 |
 | `docs/使用说明-详细版.md` | 详细说明书 |
-| `发行包/` | 发行包说明（真正的压缩包在 Releases 页面） |
+| `发行包/` | 单独一份 exe（只有 2.5MB，离开 `_internal` 跑不起来）+ 说明；完整包在 Releases 页面 |
 | `PROJECT_MEMORY.md` | 给接手的人看的工程记忆（踩过的坑都在这） |
 
 ---
