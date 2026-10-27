@@ -209,6 +209,20 @@ class ReviewTests(unittest.TestCase):
         review = parse_review('{"passed":true,"repeats":"其实重复了前文","avoided":"","fabricated":""}')
         self.assertFalse(review.passed)
 
+    def test_an_incomplete_answer_does_not_send_the_turn_back(self):
+        """人说话不会把每个问题答完；只有重复和编造才值得重写。"""
+        review = parse_review(
+            '{"passed":false,"repeats":"","avoided":"没把被要求的三个步骤都写完","fabricated":""}'
+        )
+        self.assertTrue(review.passed)
+        self.assertIn("没把被要求的三个步骤都写完", review.criticism)
+
+    def test_fabrication_alone_sends_the_turn_back(self):
+        review = parse_review(
+            '{"passed":true,"repeats":"","avoided":"","fabricated":"编了一句来源里没有的原话"}'
+        )
+        self.assertFalse(review.passed)
+
     def test_malformed_review_raises(self):
         with self.assertRaises(ValueError):
             parse_review("not json")

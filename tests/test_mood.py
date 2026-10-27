@@ -1,11 +1,13 @@
 """Tempers move because of what was said, not because a timer ran out."""
 
 import json
+import dataclasses
 import unittest
 
 from brainstorm.models import DiscussionSession, Reaction, Utterance, ViewpointKind
 from brainstorm import mood as mood_module
 from brainstorm.mood import (
+    quiet_seats,
     CHANGE_COOLDOWN,
     FADE_EVERY,
     MAX_NOTES_PER_TURN,
@@ -184,6 +186,86 @@ class StorageTests(unittest.TestCase):
         })
         self.assertEqual(restored.utterances[0].reactions, ())
 
+    def test_a_head_on_challenge_records_annoyance_even_if_the_model_forgot(self):
+        """模型常常不填 reactions；当面挑错总要有人不高兴。"""
+        from brainstorm.llm import AnthropicDiscussionProvider, TurnSpec
+
+        history = [dataclasses.replace(say("kun", "这行现在挺稳的"), event_id="event-000000")]
+        provider = AnthropicDiscussionProvider(model="test-model")
+        utterance, _ = provider._parse(
+            '{"content":"稳？你这行明年就没了","kind":"风险","intent":"challenge",'
+            '"confidence":"guess","replies_to":"event-000000","reactions":[]}',
+            TurnSpec("qian", "乾明", "动态交锋", "风险"),
+            history,
+            event=True,
+        )
+        self.assertEqual(len(utterance.reactions), 1)
+        self.assertEqual(utterance.reactions[0].seat_id, "kun")
+        self.assertEqual(utterance.reactions[0].delta, -1)
+
+    def test_kind_words_alone_do_not_annoy_anyone(self):
+        from brainstorm.llm import AnthropicDiscussionProvider, TurnSpec
+
+        history = [dataclasses.replace(say("kun", "这行现在挺稳的"), event_id="event-000000")]
+        provider = AnthropicDiscussionProvider(model="test-model")
+        utterance, _ = provider._parse(
+            '{"content":"我觉得还行","kind":"风险","intent":"support",'
+            '"confidence":"guess","reactions":[]}',
+            TurnSpec("qian", "乾明", "动态交锋", "风险"),
+            history,
+            event=True,
+        )
+        self.assertEqual(utterance.reactions, ())
+
+    def test_the_model_own_reactions_win_over_the_fallback(self):
+        from brainstorm.llm import AnthropicDiscussionProvider, TurnSpec
+
+        history = [
+            dataclasses.replace(say("kun", "这行现在挺稳的"), event_id="event-000000"),
+            say("dui", "我看未必"),
+        ]
+        provider = AnthropicDiscussionProvider(model="test-model")
+        utterance, _ = provider._parse(
+            '{"content":"你俩都别吵","kind":"风险","intent":"challenge",'
+            '"confidence":"guess","replies_to":"event-000000",'
+            '"reactions":[{"seat":"dui","delta":2,"why":"有人帮他说话"}]}',
+            TurnSpec("qian", "乾明", "动态交锋", "风险"),
+            history,
+            event=True,
+        )
+        self.assertEqual([item.seat_id for item in utterance.reactions], ["dui"])
+        self.assertEqual(utterance.reactions[0].delta, 2)
+
 
 if __name__ == "__main__":
     unittest.main()
+
+class QuietSeatTests(unittest.TestCase):
+    def test_a_seat_everyone_ignored_goes_quiet(self):
+        history = [
+            say("kun", "这行现在挺稳的"),
+            say("zhen", "稳啥稳，我听说有人排队排了一下午"),
+            say("kan", "排队是排队，车还是没地方停"),
+            say("li", "你说是不是，现在停车全靠运气"),
+            say("dui", "我看未必，运气好的人才有车位"),
+            say("gen", "两句话：车位不够，谁抢到算谁的"),
+        ]
+        self.assertIn("kun", quiet_seats(history, {item.speaker_id for item in history}))
+
+    def test_a_seat_named_in_reply_is_not_quiet(self):
+        history = [
+            dataclasses.replace(say("kun", "这行现在挺稳的"), event_id="event-000000"),
+            say("zhen", "稳啥稳，我听说有人排队排了一下午"),
+            say("kan", "排队是排队，车还是没地方停"),
+            say("li", "你说是不是，现在停车全靠运气"),
+            say("dui", "我看未必，运气好的人才有车位"),
+            dataclasses.replace(say("gen", "两句话：车位不够", ), replies_to="event-000000", event_id="event-000005"),
+        ]
+        self.assertNotIn("kun", quiet_seats(history, {item.speaker_id for item in history}))
+
+    def test_someone_who_just_spoke_is_not_quiet(self):
+        history = [say("kun", "我刚说完"), say("zhen", "我接着说"), say("kan", "还有我")]
+        self.assertNotIn("kun", quiet_seats(history, {"kun"}))
+
+    def test_nothing_quiet_before_a_discussion_starts(self):
+        self.assertEqual(quiet_seats([], {"kun"}), set())

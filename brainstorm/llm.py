@@ -818,6 +818,7 @@ class AnthropicDiscussionProvider:
                 seat_ids={item.speaker_id for item in history} | {spec.speaker_id},
                 speaker_id=spec.speaker_id,
             ))
+            reactions = _ensure_reaction(reactions, history, spec, data)
         utterance = Utterance(spec.speaker_id, spec.speaker_name, content.strip(), kind, spec.phase, replies_to, simulated=True, origin="model", intent=intent, verification="unverified", stance_change=stance_change, face=face, reactions=reactions)
         if opportunity:
             # history arrives as a list; never concatenate a tuple onto it.
@@ -828,6 +829,45 @@ class AnthropicDiscussionProvider:
                 "风险/反对": sum(item.kind == ViewpointKind.RISK for item in seen),
             }
         return utterance, opportunity
+
+
+def _ensure_reaction(
+    reactions: tuple[Reaction, ...],
+    history: Sequence[Utterance],
+    spec: TurnSpec,
+    data: dict[str, Any],
+) -> tuple[Reaction, ...]:
+    """当面挑错本来就招人烦：模型没写 reactions 时，按实际冲突记一笔。
+
+    这不是按轮次排班——只有当这条发言确实冲着某个人的话去（intent 是反驳/追问，
+    且回应对象就在前文里），才给他记一分不快；模型自己写了就以模型为准。
+    """
+    if reactions:
+        return reactions
+    intent = data.get("intent")
+    if intent not in {"challenge", "question"}:
+        return reactions
+    target = data.get("replies_to")
+    seat = None
+    if isinstance(target, str) and target:
+        seat = next(
+            (item.speaker_id for item in reversed(history) if item.event_id == target),
+            None,
+        )
+    if seat is None:
+        # 模型没写回应对象时，就当他在反驳上一个说话的人——反驳总得有个对象。
+        seat = next(
+            (
+                item.speaker_id
+                for item in reversed(history)
+                if item.speaker_id not in {"moderator", "user", spec.speaker_id}
+            ),
+            None,
+        )
+    if seat is None or seat in {"moderator", "user", spec.speaker_id}:
+        return reactions
+    reason = "被当面挑错" if intent == "challenge" else "被追问到头上"
+    return (Reaction(seat, -1, reason),)
 
 
 class OpenAICompatibleDiscussionProvider(AnthropicDiscussionProvider):

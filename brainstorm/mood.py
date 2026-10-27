@@ -163,3 +163,32 @@ def mood_context(history: Sequence[Utterance], seat_id: str, speaker_name: str =
         "还是你自己的脾气，只是没那么客气了。"
     )
     return line + "\n"
+
+QUIET_LOOKBACK = 5
+
+
+def quiet_seats(utterances, seats, lookback: int = QUIET_LOOKBACK) -> set[str]:
+    """最近几条里既没说话、也没人接他话的座位——桌上被晾着的那几个。"""
+    recent = list(utterances)[-lookback:]
+    if not recent:
+        return set()
+    speaker_of = {item.event_id: item.speaker_id for item in utterances}
+    quiet: set[str] = set()
+    for seat_id in seats:
+        spoke = any(item.speaker_id == seat_id for item in recent)
+        if spoke:
+            continue
+        touched = False
+        for item in recent:
+            if item.speaker_id == seat_id:
+                touched = True
+                break
+            if speaker_of.get(item.replies_to or "", None) == seat_id:
+                touched = True
+                break
+            if any(note.seat_id == seat_id for note in item.reactions):
+                touched = True
+                break
+        if not touched:
+            quiet.add(seat_id)
+    return quiet

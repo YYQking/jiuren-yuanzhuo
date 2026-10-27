@@ -33,6 +33,8 @@ class RoundtableCanvas(QWidget):
         self.roles = roles
         self.selected_ids = {role.id for role in roles}
         self.active_id: str | None = None
+        self.moods: dict[str, int] = {}
+        self.quiet: set[str] = set()
         self.topic = "等待主题"
         self.status = "准备就绪"
         self.setMouseTracking(True)
@@ -55,6 +57,17 @@ class RoundtableCanvas(QWidget):
             for role in roles
             if (self._avatar_dir / f"{role.id}.png").exists()
         }
+
+    def set_mood(self, seat_id: str, mood: int) -> None:
+        if self.moods.get(seat_id) != mood:
+            self.moods[seat_id] = mood
+            self.update()
+
+    def set_quiet(self, seat_ids) -> None:
+        seats = set(seat_ids)
+        if seats != self.quiet:
+            self.quiet = seats
+            self.update()
 
     def set_state(self, topic: str | None = None, status: str | None = None, active_id: str | None = None) -> None:
         if topic is not None:
@@ -175,9 +188,26 @@ class RoundtableCanvas(QWidget):
         if compact:
             painter.restore()
             return
+        mood = self.moods.get(role.id)
+        if mood is not None:
+            # 三颗点表示脸色：越少越冷。不写字，免得桌上像在贴标签。
+            filled = 1 if mood <= -2 else 2 if mood <= 0 else 3
+            color = "#96302c" if mood < 0 else ("#caa96a" if mood > 0 else "#9a8b6d")
+            for slot in range(3):
+                dot = QPointF(point.x() - 8 + slot * 8, point.y() + radius + 26)
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(QColor(color) if slot < filled else QColor("#3a3228"))
+                painter.drawEllipse(dot, 2.6, 2.6)
+
         painter.setPen(QColor(COLORS["muted"]))
         painter.setFont(QFont("Microsoft YaHei UI", 8))
-        painter.drawText(QRectF(point.x() - 68, point.y() + 52, 136, 18), Qt.AlignmentFlag.AlignCenter, "当前发言" if active else ("参与" if opacity > 0.5 else "未参与"))
+        if active:
+            note = "当前发言"
+        elif role.id in self.quiet:
+            note = "一直没人接他"
+        else:
+            note = "参与" if opacity > 0.5 else "未参与"
+        painter.drawText(QRectF(point.x() - 68, point.y() + 52, 136, 18), Qt.AlignmentFlag.AlignCenter, note)
         painter.restore()
 
     @staticmethod

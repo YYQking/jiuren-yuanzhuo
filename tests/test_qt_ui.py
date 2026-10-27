@@ -611,5 +611,101 @@ class QtUiTests(unittest.TestCase):
         self.assertEqual(fired, [1])
 
 
+    def test_event_table_shows_three_dot_moods_and_the_ignored_seat(self):
+        from brainstorm.mood import Reaction
+
+        page = RoundtablePage(self.controller)
+        session = DiscussionSession(
+            topic="车位被转租了",
+            selected_role_ids=list(EVENT_ROLE_IDS),
+            mode="event",
+        )
+        session.utterances.extend(
+            [
+                Utterance(
+                    event_id="event-000001",
+                    speaker_id="kun",
+                    speaker_name="坤兰",
+                    phase="独立观点",
+                    kind=ViewpointKind.ASSUMPTION,
+                    intent="initial",
+                    content="这行现在挺稳的，我听说排队那事不归物业管",
+                    face="yang",
+                ),
+                Utterance(
+                    event_id="event-000002",
+                    speaker_id="zhen",
+                    speaker_name="震山",
+                    phase="独立观点",
+                    kind=ViewpointKind.ASSUMPTION,
+                    intent="challenge",
+                    content="稳啥稳，有人排了一下午",
+                    face="yang",
+                    reactions=(Reaction(seat_id="kun", delta=-2, why="被当面挑错"),),
+                ),
+                Utterance(
+                    event_id="event-000003",
+                    speaker_id="kan",
+                    speaker_name="坎川",
+                    phase="正反交锋",
+                    kind=ViewpointKind.FACT,
+                    intent="challenge",
+                    content="排队是排队，车还是没地方停",
+                    face="yang",
+                    replies_to="event-000002",
+                ),
+                Utterance(
+                    event_id="event-000004",
+                    speaker_id="li",
+                    speaker_name="离霞",
+                    phase="正反交锋",
+                    kind=ViewpointKind.ASSUMPTION,
+                    intent="elaborate",
+                    content="你说是不是，现在停车全靠运气",
+                    face="yang",
+                    replies_to="event-000003",
+                ),
+                Utterance(
+                    event_id="event-000005",
+                    speaker_id="dui",
+                    speaker_name="兑溪",
+                    phase="正反交锋",
+                    kind=ViewpointKind.ASSUMPTION,
+                    intent="elaborate",
+                    content="我看未必，运气好的人才有车位",
+                    face="yang",
+                    replies_to="event-000004",
+                ),
+                Utterance(
+                    event_id="event-000006",
+                    speaker_id="gen",
+                    speaker_name="艮石",
+                    phase="正反交锋",
+                    kind=ViewpointKind.ASSUMPTION,
+                    intent="elaborate",
+                    content="两句话：车位不够，谁抢到算谁的",
+                    face="yang",
+                    replies_to="event-000005",
+                ),
+            ]
+        )
+        page.canvas.set_roles(list(EVENT_ROLES))
+        page.session = session
+        page._history = list(session.utterances)
+        page._sync_table_mood()
+
+        self.assertEqual(page.canvas.moods["kun"], -1)
+        self.assertIn("xun", page.canvas.quiet)  # 一次没说过、也没人提
+        page.canvas.resize(900, 420)
+        page.canvas.grab()  # 真画一遍，确认三颗点不会炸
+
+    def test_business_table_does_not_show_moods(self):
+        page = RoundtablePage(self.controller)
+        session = DiscussionSession(topic="咖啡店的复购", selected_role_ids=[role.id for role in DEFAULT_ROLES])
+        page.session = session
+        page._sync_table_mood()
+        self.assertEqual(page.canvas.moods, {})
+
+
 if __name__ == "__main__":
     unittest.main()

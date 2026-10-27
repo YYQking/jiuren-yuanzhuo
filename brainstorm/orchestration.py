@@ -218,7 +218,7 @@ def build_review_prompt(session: DiscussionSession, plan: TurnPlan, utterance: U
         "逐项检查并给出具体证据，不要写空泛评语：\n"
         "1. repeats：是否只是重复前文已有观点？是则指出重复的是哪个 event_id 或哪一句，否则留空。\n"
         "2. avoided：是否回避了本次被指派必须回答的内容？是则指出回避了什么，否则留空。\n"
-        "3. fabricated：是否编造了来源材料中不存在的数据、引用或事实？是则指出编造了什么，否则留空。\n"
+        "3. fabricated：只有当发言把**具体数字、日期、文件名称、机构或专家的原话**当成真的说出来，或者干脆冒充自己亲自核实过（「我去查了」「我问过了」「文件上写着」），才算编造。**「我听说有人去问过」「我猜物业手里有张表」这类转述和推测不算编造**——八卦桌上本来就大半是传话，别拿这个卡人。是则指出编造了什么，否则留空。\n"
         "任意一项非空即视为不合格，passed 必须为 false。\n"
         'JSON 形状：{"passed":true,"repeats":"","avoided":"","fabricated":""}'
     )
@@ -234,7 +234,13 @@ def parse_review(text: str) -> Review:
         return value.strip()[:500] if isinstance(value, str) else ""
 
     repeats, avoided, fabricated = field("repeats"), field("avoided"), field("fabricated")
-    # A model that reports a concrete problem has failed the review whatever it
-    # wrote in passed; the concrete finding is worth more than the verdict.
-    passed = bool(data.get("passed")) and not (repeats or avoided or fabricated)
+    # 只有"重复前文"和"编造事实"真的踩线才退回去重写。人说话本来就不会把每个问题
+    # 答完；把"没答全"也当成不合格，会把每条发言逼成答卷，这也正是用户抱怨的模板感。
+    # avoided 仍然记录下来，但不阻断这条发言。
+    if repeats or fabricated:
+        passed = False
+    elif avoided:
+        passed = True  # 只是没答全，不算不合格
+    else:
+        passed = bool(data.get("passed"))
     return Review(passed=passed, repeats=repeats, avoided=avoided, fabricated=fabricated)

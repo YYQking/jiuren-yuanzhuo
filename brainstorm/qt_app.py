@@ -68,7 +68,7 @@ from .models import DiscussionSession, Role, Utterance, ViewpointKind
 from .hotspot_page import HotspotPage
 from .hotspots import HotspotCache, HotspotProvider, default_hotspot_feeds
 from .model_hotspots import HybridHotspotProvider, ModelHotspotProvider
-from .mood import mood_label, mood_of
+from .mood import mood_label, mood_of, quiet_seats
 from .providers import resolve_providers
 from .qt_theme import COLORS, app_stylesheet, title_font
 from .roles import DEFAULT_ROLES, ROLES_BY_MODE, SECTION_TEXT, default_roles_for, face_label
@@ -1392,6 +1392,7 @@ class RoundtablePage(QWidget):
         self._discussion_state_changed(session.discussion_state)
         self.canvas.set_selected(self._selected_role_ids)
         self.canvas.set_state(session.topic, "已加载历史讨论" if self.controller.playback.state.value == "completed" else "讨论进行中", None)
+        self._sync_table_mood()
         if self.controller.playback.state.value == "completed":
             self._history = list(session.utterances)
             self.transcript.setPlainText("\n\n".join(self._transcript_line(item) for item in self._history))
@@ -1525,6 +1526,18 @@ class RoundtablePage(QWidget):
         self.canvas.set_state(status=f"{utterance.speaker_name} 正在发言", active_id=utterance.speaker_id if utterance.speaker_id != "moderator" else None)
         self._show_current_text(utterance)
         self.transcript.append(self._transcript_line(utterance))
+        self._sync_table_mood()
+
+    def _sync_table_mood(self) -> None:
+        """把脸色画到桌面上；只有事件桌有这回事，商业桌不谈脸色。"""
+        session = self.session
+        if session is None or session.mode != "event":
+            return
+        seats = {role.id for role in self.canvas.roles}
+        utterances = list(session.utterances)
+        for role_id in seats:
+            self.canvas.set_mood(role_id, mood_of(utterances, role_id))
+        self.canvas.set_quiet(quiet_seats(utterances, seats))
 
     def _set_bubble(self, text: str, tooltip: str = "") -> None:
         """Write the current-turn card. The kind legend belongs only to a turn,
