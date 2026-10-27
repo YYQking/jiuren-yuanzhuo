@@ -503,4 +503,17 @@ if (-not ($b[0] -eq 0xEF -and $b[1] -eq 0xBB -and $b[2] -eq 0xBF)) {
 
 **「缺的是……谁统计的、哪一年」会被抄成模板。** 第一场真实跑测 19 条里"谁统计"出现 10 次、"缺的是"6 次。已在 claim 规则里加第 10 条：别每条都用同一句式补"缺的是"，缺证据只在真卡住时提且换问法。测试 337 项。
 
+## 17. 往 GitHub 上传的坑（2026-10-27 晚）
+
+**用户要求：每次更新都推到 GitHub；介绍和使用说明要中文。**
+
+- 仓库：`https://github.com/YYQking/-`（仓库名就是一个减号，用户自己起的），分支 `main`。
+- 推送靠 HTTPS + Windows 凭据管理器里存的 PAT（用户名 `YYQking`）。全局曾经有一条把 github.com 改写成 `gh-proxy.com` 的 `insteadOf`，已删；本仓库 `http.proxy` 是空串（不是没设）。
+- **`github.com:443` 会间歇性连不上**（`api.github.com`、`codeload.github.com`、`ssh.github.com:443`、`uploads.github.com` 都通）。连不上时 `git push` 报 `Failed to connect to github.com:443 after 21000 ms`，重试几次可能通。
+- 兜底路线（已验证可用）：用 API 发文件（`PUT /repos/:o/:r/contents/:path`，带 `sha` 表示更新）和传发行包（`POST /repos/:o/:r/releases` + `POST uploads.github.com/.../assets?name=`）。脚本在 `artifacts/publish_docs.py`、`artifacts/upload_release.py`（token 从 `git credential fill` 读，不打印）。
+- **GitHub 会把发行包附件的非 ASCII 文件名剥成 ASCII 残骸**：`九人圆桌-发给别人用.zip` 变成 `-.zip`，`九人圆桌.exe` 变成 `default.exe`。附件名只能用英文，已改成 `jiuren-yuanzhuo-2026-10-27.zip` / `jiuren-yuanzhuo.exe`，正文里用中文说清是什么。
+- 约 300MB 的程序目录**不要塞进仓库**：会永久占 git 历史，每次 clone 都要下。发行包放 Releases 附件，仓库里只留 `发行包/说明.txt` 指路。
+- 仓库里的 `README.md` 是给人看的总览，`更新记录.md` 是按日期的人话变更表；`docs/使用说明-详细版.md` 是详细手册，打包时由 `tools/build_manual_txt.py` 渲成包内 `使用说明.txt`（UTF-8 带 BOM + CRLF，别丢）。
+- 提交信息从这一刻起用中文——用户看不懂英文提交。
+
 没有本文件之外的自动继续任务；以用户下一条请求为准。不要声称所有设计目标已完美实现。
