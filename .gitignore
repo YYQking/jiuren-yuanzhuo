@@ -24,3 +24,7 @@ artifacts/
 desktop-release/九人圆桌桌面版-无限讨论/
 /九人圆桌.exe
 dsh-image-gen/
+
+# 生成图片的临时输出
+/dsh-image-gen/
+qt-run.log.out
