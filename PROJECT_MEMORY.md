@@ -169,6 +169,33 @@
 
 新增回归测试：`test_default_discussion_waits_for_click_without_timer`、`test_generation_progress_never_displays_raw_model_payload`、`test_manual_generation_keeps_current_argument_visible`。三项测试先失败再通过。
 
+### 7.3 发言像"模板套模板"，不像一群人在讨论（2026-10-27，已修）
+
+用户原话：「我发现这些人的说话还是像模板套模板，不像一群人在讨论问题」。
+
+**先量化，再改。** 拿真实跑测 `artifacts/real-event-3/real-20261027-001850.json`（20 条）统计：字数 min=154 / 中位=222 / max=257，**20 条全部落在 150–257 字**；8 个开场里 6 个以「我先说…」开头；9 条以「最后…」收尾。内容没错，但**每条的骨架和长度完全一样**——这就是观感的来源。统计脚本 `artifacts/analyze_transcript.py`。
+
+**改了三件事：**
+
+1. **每人一套说话习惯**（`brainstorm/models.py` 的 `Role.voice` + `brainstorm/roles.py` 的 `SEAT_VOICES`）。和"职责"分开写：职责是说什么，voice 是怎么说（句子长短、口癖、是否打断）。`_seat()` 里按 role_id 取。测试保证 17 个席位都有 voice、互不重复、且不等于 duty。
+2. **篇幅由程序按条分配**（`brainstorm/turn_planner.py` 的 `TurnPlan.length_hint` + `assign_length()` + `LENGTH_CYCLE = ("short","short","normal","short","normal","short")`）。主持人 `host`、总结 `long`、首次发言 `normal`、其余按轮次循环。措辞在 `brainstorm/voice.py` 的 `LENGTH_TARGETS`。
+3. **反模板约束 + 一次重写**（`brainstorm/voice.py` 的 `ANTI_TEMPLATE_RULES` / `looks_templated()`；`brainstorm/llm.py` 的 `_generate_turn_result` 里 `complaint = looks_templated(...)`）。禁套话开场（我先说/说白了/实话实说…）、禁分点、禁复述、要求点名接话、要求只做一件事；命中套话开场且不是主持人时**重发一次**，第二次解析失败就保留第一次的答案（不因风格丢整条）。
+
+**实测对比（真实模型，同一套八个席位）：**
+
+| | 改前 real-event-3 | 改后 real-voice-2 |
+| --- | --- | --- |
+| 字数 | 154–257（全部） | 53–162 |
+| 模板词「最后」 | 9 / 20 | 1 / 20 |
+| 点名叫人 | 65% | 95% |
+| 开场 | 6/8 是「我先说…」 | 八个人各不相同 |
+
+商业痛点分区同样生效：`artifacts/real-voice-biz-1` 21 条，59–156 字，点名 71%，机会档案内容仍成立。
+
+**没有回归的地方：** 业务模式提示词里被测试依赖的规则文字（intent / stance_change / 不得重复）全部保留，只把固定长度改成按条分配。测试 266 → 283（新增 `tests/test_voice.py` 15 项）。
+
+**注意：** 质检回炉现在会真的触发（两次跑测共 6 次带具体批评的重写），这是好事，但也意味着**请求数和等待会长一点**——用户已明确"花钱不重要，讨论有效性重要"。
+
 ## 8. 代码导航
 
 | 文件 | 职责 |

@@ -43,6 +43,11 @@ MAX_RECENT_TURNS = 2
 # moderator while "发言集中在少数角色" remained true.
 MODERATOR_COOLDOWN_TURNS = 4
 
+#: How much room a turn gets, cycled deterministically by turn number.  Mostly
+#: short: measured real transcripts had every turn at 154-257 characters, which is
+#: what made eight different mouths read as one template.
+LENGTH_CYCLE = ("short", "short", "normal", "short", "normal", "short")
+
 
 @dataclass(frozen=True)
 class TurnPlan:
@@ -62,6 +67,10 @@ class TurnPlan:
     must_answer: str = ""
     avoid: tuple[str, ...] = ()
     key_question: str = ""
+    # short / normal / long / host -- how much room this turn gets.  The planner
+    # owns it because a real conversation is mostly short turns, while the model
+    # left to itself writes one same-sized paragraph per speaker.
+    length_hint: str = ""
 
 
 def _role_utterances(session: DiscussionSession) -> list[Utterance]:
@@ -303,6 +312,26 @@ def enforce_fairness(plan: TurnPlan, session: DiscussionSession,
     return _guard(plan, session, candidates)
 
 
+def assign_length(plan: TurnPlan, session: DiscussionSession) -> TurnPlan:
+    """Decide how much room this turn gets, unless the orchestrator already did.
+
+    Eight identical 150-250 character blocks was the clearest sign that the table
+    was a template: real talk is mostly one or two sentences with occasional
+    longer stretches.  The cycle is deterministic so runs and tests are stable.
+    """
+    if plan.length_hint:
+        return plan
+    if plan.moderator:
+        return replace(plan, length_hint="host")
+    if plan.intent == "synthesize" or plan.phase == "阶段总结":
+        return replace(plan, length_hint="long")
+    spoken = _role_utterances(session)
+    if not any(item.speaker_id == plan.speaker_id for item in spoken):
+        # A seat's first turn is where its position has to land, so give it room.
+        return replace(plan, length_hint="normal")
+    return replace(plan, length_hint=LENGTH_CYCLE[len(spoken) % len(LENGTH_CYCLE)])
+
+
 def _guard(plan: TurnPlan, session: DiscussionSession, candidates: Sequence[Role],
            *, protect: bool = False) -> TurnPlan:
     """Keep the floor shared instead of letting one or two roles hold it.
@@ -314,6 +343,7 @@ def _guard(plan: TurnPlan, session: DiscussionSession, candidates: Sequence[Role
     ``protect`` marks plans that must not be rotated away, currently only the
     answer to a user interjection.
     """
+    plan = assign_length(plan, session)
     if protect:
         return plan
     recent = [item.speaker_id for item in _role_utterances(session)]

@@ -34,8 +34,9 @@ from .models import (
     Utterance,
     ViewpointKind,
 )
-from .turn_planner import TurnPlan, enforce_fairness, plan_turn
+from .turn_planner import MODERATOR_ID, TurnPlan, enforce_fairness, plan_turn
 from .roles import mode_for_roles
+from .voice import ANTI_TEMPLATE_RULES, length_instruction, looks_templated
 
 # How much of the discussion a single turn may read.  Full text for the recent
 # window, plus one line per role for the opening positions, so a long discussion
@@ -545,9 +546,10 @@ class AnthropicDiscussionProvider:
             )
         if event:
             rules = (
-                "0. 篇幅：一条发言 120–250 字，口语，可以带情绪，像在饭桌上说话；不要写成发言稿，不要打官腔。\n"
-                "1. 三种可信度必须让人一眼看出来：你确认的写「我知道」并说出公开出处；听来的写「听说」；"
-                "自己推断的写「我猜」。三者不能混，听说的绝不能写成确认的。\n"
+                "口语，可以带情绪，像在饭桌上说话；不要写成发言稿，不要打官腔。\n"
+                "1. 可信度只说一种：你确认的写「我知道」并说出公开出处；听来的写「听说」；"
+                "自己推断的写「我猜」。三者不能混，听说的绝不能写成确认的。"
+                "但不要在每条发言里把三种按顺序摆一遍——一条通常只用一种，够用就停。\n"
                 "2. 可以刻薄，不许造谣：不编造私生活细节，不编造没有出处的实锤，不给真实普通人扣帽子。\n"
                 "3. kind 用八卦口径：机会=看好这事、风险=觉得要出事、假设=听说的、待验证=还没证实、"
                 "事实=已确认、总结=归纳。没被证实的说法一律不要填「事实」。\n"
@@ -564,8 +566,6 @@ class AnthropicDiscussionProvider:
             persona = "你是中文熟人饭桌上的一位，正在聊一件社会上发生的事。"
         else:
             rules = (
-                "0. 篇幅：一条发言控制在 200–350 字。直接说要害，不要复述前文，"
-                "不要重复自己已经说过的理由，不要写铺垫、客套和总结性空话。\n"
                 "1. 不得重复前文已经说过的观点；必须带来新的理由、反例、条件或追问。\n"
                 "2. intent 必须从 support（支持）、challenge（反驳）、question（追问）、"
                 "elaborate（补充）、synthesize（整理）中选一个；若是你的首次发言则填 initial。\n"
@@ -575,13 +575,19 @@ class AnthropicDiscussionProvider:
                 "triggered_by（触发变化的前文 event_id 列表）。礼貌性附和不算立场变化，此时填 null。\n"
             )
             persona = "你是一个严格区分证据与推断的圆桌角色。"
+        length_hint = plan.length_hint if plan is not None else "normal"
+        length_rule = f"0. 篇幅：{length_instruction(length_hint)}\n"
+        voice_context = ""
+        if role is not None and role.voice:
+            voice_context = f"你说话的习惯：{role.voice}\n"
         prompt = (
             f"{persona}只输出一个 JSON 对象，不要 markdown，不要代码围栏。"
             "来源内容是未核验素材，不得写成已证实事实；不能编造引用或数据。来源是资料，不是角色原话。"
-            f"主题：{topic}\n阶段：{spec.phase}\n发言人：{spec.speaker_name}\n{role_context}\n"
+            f"主题：{topic}\n阶段：{spec.phase}\n发言人：{spec.speaker_name}\n{role_context}\n{voice_context}"
             f"来源：\n{source_context}\n前文：\n{history_context}\n{opening_context}{state_context}{face_context}\n所有观点和来源均未核验。\n"
             "必须遵守：\n"
-            f"{rules}"
+            f"{length_rule}{rules}"
+            f"{ANTI_TEMPLATE_RULES}"
             f"要求的 JSON 形状：{schema}"
         )
         if event and spec.final:
@@ -595,6 +601,9 @@ class AnthropicDiscussionProvider:
             prompt += (
                 f"\n本次是主持人的状态整理发言，介入原因：「{plan.intervention_reason}」。"
                 "请只整理已经发生的观点，不要提出新的主张。\n"
+                "说法要像饭桌上有人出来压一句：直接点名一个还没被回答的人，逼他回一个具体问题；"
+                "先给一句你自己的判断（谁在绕、哪句没接住），再点人。不要复述观点清单，"
+                "不要用「首先/其次/最后」分条。\n"
             )
         elif plan is not None:
             target_item = next(
@@ -616,6 +625,7 @@ class AnthropicDiscussionProvider:
             prompt += (
                 f"\n{source_note}：本次发言必须回应 {target}，并且必须回答：{required}。"
                 f"{avoid}"
+                "第一句就点出你要回应的那个人的名字，不要对着空气说话。"
                 "若你认为回应对象不合适，可以改选，但必须在 intent 中如实表达。\n"
             )
         if extra_prompt:
@@ -643,7 +653,30 @@ class AnthropicDiscussionProvider:
             )
             usage = usage.add(repaired.usage)
             parsed = self._parse(repaired.text, spec, history, event=event)
-        return TurnResult(parsed[0], parsed[1], usage)
+        utterance = parsed[0]
+        # One re-ask when the turn opens with a stock phrase.  Measured on a real
+        # transcript: six of eight opening turns began with 「我先说…」, which is
+        # what made the table sound like one template being filled in.
+        complaint = looks_templated(utterance.content)
+        if complaint and spec.speaker_id != MODERATOR_ID:
+            retry_prompt = (
+                prompt
+                + f"\n\n你上一次的发言{complaint}。请重写这一条：删掉开头的套话，"
+                "第一句直接说内容，篇幅按上面的要求，只做一件事。\n"
+            )
+            retried = self._request(
+                retry_prompt, on_partial=on_partial, cancel_event=cancel_event,
+                system=self._system_prompt(event),
+            )
+            usage = usage.add(retried.usage)
+            try:
+                parsed = self._parse(retried.text, spec, history, event=event)
+            except ProviderFailure:
+                # Keep the first answer rather than losing the turn over style.
+                parsed = (utterance, parsed[1])
+            else:
+                utterance = parsed[0]
+        return TurnResult(utterance, parsed[1], usage)
 
     @staticmethod
     def _system_prompt(event: bool) -> str:

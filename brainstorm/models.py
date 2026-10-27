@@ -41,6 +41,11 @@ class Role:
     trigram: str = ""
     yang: str = ""
     yin: str = ""
+    # How this seat talks, as opposed to what it is responsible for.  Without it
+    # every seat produced the same four-beat paragraph (pick up the thread, take
+    # a side, add a "but", ask a question), which is what made a table of nine
+    # people read like nine copies of one template.
+    voice: str = ""
 
 
 @dataclass(frozen=True)

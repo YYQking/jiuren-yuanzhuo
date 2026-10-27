@@ -246,8 +246,13 @@ class BIntegrationTests(unittest.TestCase):
         self.assertIn("仍然保留的条件", prompt)
         # 必须明确禁止重复前文
         self.assertIn("不得重复", prompt)
-        # 必须给出篇幅上限，否则模型会写成长篇
-        self.assertIn("200–350 字", prompt)
+        # 篇幅必须由程序按条分配，而不是一条固定长度：真实跑测里 20 条发言
+        # 全部落在 154–257 字，正是“套模板”的观感来源
+        self.assertIn("篇幅：", prompt)
+        self.assertIn("这一条", prompt)
+        # 必须给出反模板的写法约束（禁止同一副骨架、禁止套话开场）
+        self.assertIn("别把每一条都写成同一副骨架", prompt)
+        self.assertIn("不许用这些开场", prompt)
 
     def test_anthropic_parse_converts_speaker_reply_reference_to_event_id(self):
         spec = TurnSpec("r", "角色", "动态交锋")
