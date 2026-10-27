@@ -315,22 +315,18 @@ html, body {
   to { transform: none; opacity: 1; }
 }
 
-/* 桌面正中：一枚印章 + 烫金的阶段字。不再用"字距拉开的灰字"那种土法。
-   里面一圈是绒面压出来的凹痕，外面一圈是烫金线的椭圆框。 */
+/* 桌面正中：竖排的题款 + 一枚小印，像织在绒面里的落款，不做招牌。
+   背后只垫一层很淡的暗影把字托出来，不画框——画框就又回到"赌场招牌"那味了。 */
 .pot::before {
   content: "";
   position: absolute;
   left: 50%;
   top: calc(50% - 2px);
-  width: 176px;
-  height: 106px;
+  width: 210px;
+  height: 132px;
   transform: translate(-50%, -50%);
   border-radius: 50%;
-  border: 1px solid rgba(240, 217, 166, 0.17);
-  box-shadow:
-    inset 0 0 0 5px rgba(0, 0, 0, 0.09),
-    inset 0 1px 0 rgba(255, 246, 224, 0.06),
-    0 0 18px rgba(0, 0, 0, 0.22);
+  background: radial-gradient(58% 64% at 50% 50%, rgba(0, 0, 0, 0.30), transparent 74%);
   pointer-events: none;
 }
 .plaque {
@@ -343,8 +339,16 @@ html, body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
 }
+
+/* 竖排两个字 + 右侧一方小印：印章落在末字旁边，像题款末尾钤印 */
+.inscription {
+  display: flex;
+  align-items: flex-end;
+  gap: 7px;
+}
+.inscription .seal { margin-bottom: 3px; }
 
 /* 小印章：朱红底、米色字，只有一枚，不抢戏 */
 .seal {
@@ -361,27 +365,28 @@ html, body {
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45), inset 0 0 0 1px rgba(255, 220, 190, 0.28);
 }
 
-/* 阶段字：像压在绒面上的金箔。
+/* 阶段字：竖排、字距收紧，像题在绒面落款上的小字。
    用实心暖金 + 凹刻阴影（不用 background-clip:text 的渐变填充）：
    一是这类渐变字在部分渲染器上会整行画没，二是搬回 Qt 时实心字最好画。 */
 .plaque span {
   display: block;
+  writing-mode: vertical-rl;
   font-family: "Songti SC", "SimSun", "Noto Serif SC", serif;
-  font-size: 22px;
-  letter-spacing: 0.3em;
-  text-indent: 0.3em;
+  font-size: 19px;
+  line-height: 1;
+  letter-spacing: 0.26em;
   color: #eed9a6;
   text-shadow:
-    0 1px 0 rgba(0, 0, 0, 0.8),
-    0 -1px 0 rgba(255, 242, 214, 0.16),
-    0 0 26px rgba(238, 202, 132, 0.30);
+    0 1px 0 rgba(0, 0, 0, 0.78),
+    0 -1px 0 rgba(255, 242, 214, 0.14),
+    0 0 20px rgba(238, 202, 132, 0.24);
 }
 .plaque small {
   display: block;
   font-size: 9px;
-  letter-spacing: 0.3em;
-  text-indent: 0.3em;
-  color: rgba(236, 228, 210, 0.26);
+  letter-spacing: 0.26em;
+  text-indent: 0.26em;
+  color: rgba(236, 228, 210, 0.22);
   text-shadow: 0 1px 1px rgba(0, 0, 0, 0.5);
 }
 

@@ -44,13 +44,13 @@ def main() -> int:
     w, h = img.size
     px = img.load()
 
-    # 桌面中心：表格 48% 宽 / 56% 高，居中；取中间那块椭圆
+    # 桌面中心：竖排题款 + 印章都落在正中一小块方区里
     cx = w // 2
     cy = int(h * 0.40)
-    inner = (cx - 80, cy - 18, cx + 80, cy + 30)
+    inner = (cx - 44, cy - 38, cx + 44, cy + 34)
     # 外圈同一高度、偏左偏右的绿绒（避开字）
-    left = (cx - 300, cy - 18, cx - 220, cy + 30)
-    right = (cx + 220, cy - 18, cx + 300, cy + 30)
+    left = (cx - 300, cy - 38, cx - 220, cy + 34)
+    right = (cx + 220, cy - 38, cx + 300, cy + 34)
 
     mi = mean_lum(px, inner)
     mb = (mean_lum(px, left) + mean_lum(px, right)) / 2

@@ -111,7 +111,8 @@ function layout() {
   geo = { cx, cy, rx, ry };
 
   DEMO.seats.forEach((seat, i) => {
-    const angle = (-90 + i * (360 / DEMO.seats.length)) * Math.PI / 180;
+    // 整圈错开半步：不让任何一个座位正好落在吊灯底下（灯在正上方）
+    const angle = (-90 + (i + 0.5) * (360 / DEMO.seats.length)) * Math.PI / 180;
     const node = seatNodes.get(seat.id);
     node.style.left = `${cx + rx * Math.cos(angle)}px`;
     node.style.top = `${cy + ry * Math.sin(angle)}px`;
