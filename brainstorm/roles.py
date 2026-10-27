@@ -111,11 +111,60 @@ EVENT_ROLES = [
 ]
 
 EVENT_ROLE_IDS = frozenset(role.id for role in EVENT_ROLES)
+# 第三个分区：拆一个说法。
+# 这里的人不是职业头衔，也不是八卦性情，而是「在一场拆解里各站一个位置」：
+# 有人替它把话讲到最强，有人专门找反例，剩下的各管一段。
+CLAIM_ROLES = [
+    Role(
+        "claim_advocate", "主张者", "先把这个说法讲到最强的版本",
+        "#7c3aed", "替这个说法说话：它最合理的版本是什么，别替它说蠢话。",
+        voice="开口先说「按这个说法」，然后把逻辑讲圆；句子稳，不急着反驳，讲完就停。",
+    ),
+    Role(
+        "claim_skeptic", "挑刺者", "找漏洞、找反例、找偷换概念的地方",
+        "#be123c", "专门找反例：什么情况下这个说法不成立，它把哪两件事混成了一件。",
+        voice="爱用反问「那……呢」，一次只咬一个点，句子短、硬，不留情面。",
+    ),
+    Role(
+        "claim_data", "数据员", "要证据、要口径、要样本",
+        "#0369a1", "追问证据：多少、哪一年、谁统计的、样本是谁，没有就直说没有。",
+        voice="张口就是「多少、哪年、谁统计的」，爱报量级，不形容，句子干。",
+    ),
+    Role(
+        "claim_insider", "行内人", "说清现实里到底是怎么运转的",
+        "#0f766e", "从一线经验看这个说法对不对：实际流程、真实阻力、行里的例外。",
+        voice="爱说「我们那边」「实际是这样的」，举一个具体的人和事；句子中等，语气粗。",
+    ),
+    Role(
+        "claim_boundary", "条件派", "划出这个说法成立的前提和边界",
+        "#b45309", "加限定：在什么前提下它成立，超出哪一步就不成立了。",
+        voice="爱用「在……的前提下」「只有……才」，一句话里塞两三个条件；句子长，逗号多。",
+    ),
+    Role(
+        "claim_motive", "动机派", "看这话是谁说的、说了对谁有好处",
+        "#9333ea", "追问来源与利益：谁在反复说这句话，他说这话能得到什么。",
+        voice="爱问「这么说对他有什么好处」，把话往利益上拉；句子冷，带点刻薄。",
+    ),
+    Role(
+        "claim_analogy", "类比手", "拿别的领域的同类事对照",
+        "#4d7c0f", "换一个场景做对照：别的地方、别的行业是不是也这样，哪里不一样。",
+        voice="爱说「这就像……」，一句类比接一句拆；句子跳，画面感强。",
+    ),
+    Role(
+        "claim_layman", "外行", "代表听不懂行话的人",
+        "#64748b", "用外行视角检验：这话普通人听得懂吗，跟我有什么关系。",
+        voice="大白话，短句，听不懂就直接问「这啥意思」；不讲道理，只讲感受。",
+    ),
+]
+
+CLAIM_ROLE_IDS = frozenset(role.id for role in CLAIM_ROLES)
+
 ROLE_BY_ID = {role.id: role for role in DEFAULT_ROLES}
 EVENT_ROLE_BY_ID = {role.id: role for role in EVENT_ROLES}
+CLAIM_ROLE_BY_ID = {role.id: role for role in CLAIM_ROLES}
 
-ROLES_BY_MODE = {"business": DEFAULT_ROLES, "event": EVENT_ROLES}
-MODE_LABELS = {"business": "商业痛点", "event": "事件讨论"}
+ROLES_BY_MODE = {"business": DEFAULT_ROLES, "event": EVENT_ROLES, "claim": CLAIM_ROLES}
+MODE_LABELS = {"business": "商业痛点", "event": "事件讨论", "claim": "观点讨论"}
 
 
 def mode_for_roles(roles) -> str:
@@ -132,6 +181,8 @@ def mode_for_roles(roles) -> str:
         role_id = role if isinstance(role, str) else getattr(role, "id", "")
         if role_id in EVENT_ROLE_IDS:
             return "event"
+        if role_id in CLAIM_ROLE_IDS:
+            return "claim"
     return "business"
 
 
@@ -199,5 +250,28 @@ SECTION_TEXT: dict[str, dict[str, str]] = {
         "label_consensus": "大家都觉得",
         "label_conflict": "吵得最凶",
         "label_unresolved": "还没说清",
+    },
+    "claim": {
+        "short": "观点讨论",
+        "tab_text": "观点讨论　→　说法体检单",
+        "example_topic": "「年轻人不买房是因为穷」这个说法站得住吗？",
+        "role_title": "这个说法要哪些人来拆",
+        "intro": "把一个说法放上桌：先替它讲到最强，再一句一句拆，最后给一张说法体检单。",
+        "topic_prompt": "要拆哪个说法？",
+        "topic_placeholder": "例如：「加班越多产出越高」这个说法靠谱吗？",
+        "source_placeholder": "可选：这说法是谁说的、在哪看到的（会当作未核验来源）",
+        "note": "主持人负责开场、追问与说法体检单，不占八个席位。结论是讨论产物，不是事实裁定。",
+        "start_button": "开拆  →",
+        "archive_title": "说法体检单",
+        "archive_empty": "讨论结束后，这里会显示说法体检单",
+        "field_title": "这说法在说什么",
+        "field_audience": "谁在这么说",
+        "label_support": "站得住的理由",
+        "label_risks": "反例与边界",
+        "label_assumptions": "还缺什么证据",
+        "label_next_steps": "怎么用、怎么验",
+        "label_consensus": "大家同意的",
+        "label_conflict": "争得最凶",
+        "label_unresolved": "还没定论",
     },
 }

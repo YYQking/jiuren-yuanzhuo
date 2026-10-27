@@ -60,6 +60,9 @@ class MockDiscussionProvider:
         if session.mode == "event":
             self._event_opening(session, selected)
             return session
+        if session.mode == "claim":
+            self._claim_opening(session, selected)
+            return session
         by_id = {role.id: role for role in selected}
         active = [role for role in selected]
 
@@ -120,6 +123,168 @@ class MockDiscussionProvider:
         ViewpointKind.FACT: "elaborate",
         ViewpointKind.SUMMARY: "synthesize",
     }
+
+    def _claim_opening(self, session: DiscussionSession, selected: Sequence[Role]) -> None:
+        """Offline claim opening: first the strongest version, then the cracks.
+
+        A claim table has to *show the method* offline too: somebody states the
+        claim at its best, somebody gives a concrete counterexample, somebody
+        asks for the number, somebody marks the boundary.  Nothing here is a
+        real finding, and the card says so.
+        """
+        topic = session.topic
+        self._add(
+            session, "moderator", "主持人",
+            f"今天拆一个说法：“{topic}”。这张桌不急着表态，先把它讲到最强，再一句一句拆。"
+            "（离线演示，下面这些话是模拟的，不是调查结论）",
+            ViewpointKind.SUMMARY, "开题",
+        )
+        if session.source is not None:
+            material = session.source.note or session.source.title
+            self._add(
+                session, "moderator", "主持人",
+                f"这说法是从这儿听来的：“{material[:200]}”。来源未核验，先当线索。",
+                ViewpointKind.ASSUMPTION, "开题",
+            )
+        openers = {
+            "claim_advocate": (
+                ViewpointKind.OPPORTUNITY,
+                "我先替这个说法说话。它最合理的版本是这样：在一部分人、一个特定阶段里，“{topic}”确实成立，"
+                "而且有它的道理。要反驳，请反驳这个版本，别反驳一个没人说过的极端版。",
+            ),
+            "claim_skeptic": (
+                ViewpointKind.RISK,
+                "那我先给个反例。同样是“{topic}”，换一类人就不成立了——那种情况下，这话说得越肯定越误事。",
+            ),
+            "claim_data": (
+                ViewpointKind.VALIDATION,
+                "等一下，这话背后有几个数？多少、哪一年、谁统计的、样本是谁。这四个说不清，它就只是印象，不是结论。",
+            ),
+            "claim_insider": (
+                ViewpointKind.FACT,
+                "从我们那边实际看，“{topic}”不是这么简单：流程里还有几道没人提的坎，真做起来跟说的不一样。",
+            ),
+            "claim_boundary": (
+                ViewpointKind.ASSUMPTION,
+                "我给它划个边界：只有在前提出成立的时候它才对，超出这一步就变成另一件事了。很多争论是把两件事混成一件。",
+            ),
+            "claim_motive": (
+                ViewpointKind.RISK,
+                "我想问一句：这话谁最爱说？反复说这句话的人，说了对他有什么好处。",
+            ),
+            "claim_analogy": (
+                ViewpointKind.OPPORTUNITY,
+                "这就像别的行业里那件事：表面上一样，但有一处关键不一样，恰恰是那一处决定了它成不成立。",
+            ),
+            "claim_layman": (
+                ViewpointKind.QUESTION if hasattr(ViewpointKind, "QUESTION") else ViewpointKind.ASSUMPTION,
+                "我没太听懂。这话翻成大白话是啥意思？跟我这样的人有什么关系？",
+            ),
+        }
+        for role in selected:
+            kind, text = openers.get(
+                role.id,
+                (ViewpointKind.ASSUMPTION, "对“{topic}”这个说法，我先说它哪一部分我认，哪一部分我不敢认。"),
+            )
+            self._add(session, role.id, role.name, text.format(topic=topic), kind, "各自开口")
+
+        by_id = {role.id: role for role in selected}
+        exchanges: list[tuple[str, ViewpointKind, str, str | None]] = [
+            ("claim_boundary", ViewpointKind.ASSUMPTION,
+             "补一句限定：这话在“只看短期、只看某一类人”的时候最像真的，一放大就不准了。", "claim_advocate"),
+            ("claim_skeptic", ViewpointKind.RISK,
+             "那我就把反例说具体：有一类人恰恰相反，而且人数不少。这不是抬杠，是这句话漏了一半。", "claim_boundary"),
+            ("claim_data", ViewpointKind.VALIDATION,
+             "你们两位都在讲道理，可谁都没给数。没有数，谁的道理都成立，谁也不服谁。", "claim_skeptic"),
+            ("claim_motive", ViewpointKind.RISK,
+             "我插一句：这句话之所以传得开，是因为它好卖、好讲、听着解气，不是因为它被验证过。", "claim_data"),
+            ("claim_insider", ViewpointKind.FACT,
+             "我补充现实：真按这话去办，一线会先卡在流程上。纸面上成立，落到人身上就变形。", "claim_motive"),
+            ("claim_advocate", ViewpointKind.SUMMARY,
+             "行，我退一步：这说法不是普适规律，是“在某些条件下成立”的经验。这么改，我还认它。", "claim_insider"),
+        ]
+        recent_reply = ""
+        for seat, kind, words, reply_to in exchanges:
+            role = by_id.get(seat)
+            if role is None:
+                continue
+            added = self._add(
+                session, role.id, role.name, words, kind, "各说各话",
+                reply_to or recent_reply or None,
+            )
+            recent_reply = added.event_id
+        self._add(
+            session, "moderator", "主持人",
+            "先停一下。现在有最强版本、有反例、有边界，也缺数。"
+            "接下来该问的是：这说法能信到什么程度，实际怎么用。",
+            ViewpointKind.SUMMARY, "阶段整理",
+        )
+        session.opportunity = OpportunityCard(
+            title=f"“{topic}”这个说法站得住吗",
+            audience="说这话的人，以及被这话说中的人（离线演示）",
+            support=["在“只看短期、只看某一类人”的条件下，它确实像真的", "它把两件事混成了一件，所以听着格外顺"],
+            risks=["换一类人就反过来了，而且人数不少", "一线执行时会卡在流程上，纸面成立、落地变形"],
+            assumptions=["没有给出样本、口径和年份，目前只有印象没有数", "它传得开，可能因为它好讲，不是因为它被验证过"],
+            next_steps=["先找一组能对上口径的数", "把说法改成“在什么条件下成立”，再拿去用"],
+            stance_counts={},
+        )
+        session.phase = "首轮观点"
+
+    def _claim_extend(self, session: DiscussionSession, batch_index: int) -> list[Utterance]:
+        """Offline claim batches: keep pressing the same claim from new angles."""
+        participants: list[tuple[str, str]] = []
+        seen: set[str] = set()
+        for item in session.utterances:
+            if item.speaker_id in {"moderator", "user"} or item.speaker_id in seen:
+                continue
+            seen.add(item.speaker_id)
+            participants.append((item.speaker_id, item.speaker_name))
+        if not participants:
+            participants = [("moderator", "主持人")]
+        anchor = next(
+            (item for item in reversed(session.utterances) if item.speaker_id not in {"moderator", "user"}),
+            session.utterances[-1] if session.utterances else None,
+        )
+        anchor_speaker = anchor.speaker_name if anchor else "上一条观点"
+        anchor_content = anchor.content[:100] if anchor else session.topic[:100]
+        offset = (max(1, batch_index) - 1) * 2 % len(participants)
+        rotated = participants[offset:] + participants[:offset]
+        focus_points = ["样本和口径", "反例的边界", "消息来源与动机", "落地时的变形", "能不能拿来用", "换个人还成不成立"]
+        focus = focus_points[(max(1, batch_index) - 1) % len(focus_points)]
+        user_input = next((item.content for item in reversed(session.utterances) if item.speaker_id == "user"), "")
+        user_context = f"用户刚才提醒：{user_input[:160]}。" if user_input else ""
+        templates = [
+            f"接着拆{focus}。{anchor_speaker}刚才说：“{anchor_content}”。这句话成立要什么条件？{user_context}",
+            f"我回应{anchor_speaker}：{focus}说不清，这说法就只能停在“有点道理”这一档。",
+            f"我给一个新的反例：同一句话，换一类人、换一个阶段，结论就反过来。",
+            f"我不认同现在就把话收窄。收窄之后它虽然不会错，但也几乎没用了。",
+            f"可以把这说法改写成可查的形式：写明对象、时间、条件，再去找一组数核对。",
+            f"如果按改过的版本去用，代价是它不再好讲。传播力和准确性，这里只能选一个。",
+            f"我保留意见：即便找到数，也要看这个数是谁统计的、为什么统计。",
+            f"这一批把{focus}问到了底，也留下了没解决的地方。后面可以接着拆，或者就此收口。",
+        ]
+        phases = ["主持人追问", "回应", "补充", "正面反驳", "改成可查的形式", "代价", "保留", "阶段收束"]
+        kinds = [
+            ViewpointKind.SUMMARY, ViewpointKind.ASSUMPTION, ViewpointKind.RISK,
+            ViewpointKind.RISK, ViewpointKind.VALIDATION, ViewpointKind.ASSUMPTION,
+            ViewpointKind.RISK, ViewpointKind.SUMMARY,
+        ]
+        intents = ["synthesize", "elaborate", "challenge", "challenge", "question", "elaborate", "challenge", "synthesize"]
+        added: list[Utterance] = []
+        for index, (speaker_id, speaker_name) in enumerate(
+            [rotated[i % len(rotated)] for i in range(8)]
+        ):
+            replies_to = anchor.event_id if index == 0 else added[-1].event_id
+            item = Utterance(
+                speaker_id, speaker_name, templates[index], kinds[index], phases[index],
+                replies_to, origin="offline", intent=intents[index],
+            )
+            item = session.append_utterance(item)
+            added.append(item)
+        session.rebuild_state()
+        session.phase = "继续拆"
+        self._refresh_opportunity(session)
+        return added
 
     def _event_opening(self, session: DiscussionSession, selected: Sequence[Role]) -> None:
         """Offline event opening: many voices, a visible flip, honest ignorance.
@@ -267,6 +432,8 @@ class MockDiscussionProvider:
             raise ValueError("请输入一个讨论主题。")
         if session.mode == "event":
             return self._event_extend(session, batch_index)
+        if session.mode == "claim":
+            return self._claim_extend(session, batch_index)
         state = self.analyze_state(session)
         participants: list[tuple[str, str]] = []
         seen: set[str] = set()

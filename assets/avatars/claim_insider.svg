@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="256" height="256">
+<defs>
+<clipPath id="round"><circle cx="64" cy="64" r="64"/></clipPath>
+<radialGradient id="g" cx="38%" cy="26%" r="82%">
+<stop offset="0%" stop-color="#b9c6d1" stop-opacity="0.95"/>
+<stop offset="58%" stop-color="#0f766e" stop-opacity="1"/>
+<stop offset="100%" stop-color="#14181c" stop-opacity="1"/>
+</radialGradient>
+</defs>
+<g clip-path="url(#round)">
+<rect width="128" height="128" fill="url(#g)"/>
+<circle cx="64" cy="64" r="63" fill="none" stroke="#f0f0f0" stroke-opacity="0.10" stroke-width="2"/>
+<text x="64" y="82" text-anchor="middle" font-family="Songti SC, SimSun, serif" font-size="52" fill="#f6efe2" fill-opacity="0.92">行</text>
+</g>
+</svg>

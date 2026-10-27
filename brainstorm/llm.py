@@ -492,6 +492,7 @@ class AnthropicDiscussionProvider:
         )
         mode = mode_for_roles(roles)
         event = mode == "event"
+        claim = mode == "claim"
         layer_context = agenda_layer_context(history, mode)
         state_context = ""
         if state is not None:
@@ -574,6 +575,22 @@ class AnthropicDiscussionProvider:
                 "triggered_by（触发变化的前文 event_id 列表）。礼貌性附和不算立场变化，此时填 null。\n"
             )
             persona = "你是一个严格区分证据与推断的圆桌角色。"
+        if claim:
+            rules = (
+                "1. 你在一张专门拆说法的桌上：先把这个说法最合理的版本讲出来，再一句一句拆。\n"
+                "2. 分清三件事：说法里哪些是主张、哪些是它隐含的前提、哪些是可查的事实。\n"
+                "3. 给反例就给具体的：哪一类人、哪种情况下它不成立，别只说「不一定」。\n"
+                "4. 要证据就说清缺什么：多少、哪年、谁统计、样本是谁；没有就说没有，不许编。\n"
+                "5. 不得重复前文说过的观点；必须带来新的理由、反例、条件或追问。\n"
+                "6. intent 从 support（认同）、challenge（反对）、question（追问）、elaborate（补充）、synthesize（整理）里选；首次发言填 initial。\n"
+                "7. replies_to 必须填前文中真实出现过的 event_id 或人名；没有明确对象填 null。\n"
+                "8. 只有确实改变了原有判断时才填 stance_change，礼貌附和不算。\n"
+                "9. 不要喊口号，不要写「我们应该」，只拆这个说法。\n"
+                "10. 别每一条都用同一个句式补一句「缺的是……」或者「谁统计的、哪一年」；"
+                    "缺证据只在真的卡住时才提，而且每次换一种问法。\n",
+            )
+            persona = "你在一张专门拆说法的桌上，只负责把这个说法拆开看清楚。"
+
         length_hint = plan.length_hint if plan is not None else "normal"
         length_rule = f"0. 篇幅：{length_instruction(length_hint)}\n"
         voice_context = ""
@@ -595,6 +612,13 @@ class AnthropicDiscussionProvider:
                 "title=这事儿到底算什么，audience=牵扯到谁（用化名，不要写真实普通人的姓名），"
                 "support=有实锤的部分，risks=吵得最凶的点，assumptions=还只是传言，"
                 "next_steps=接下来看什么。\n"
+            )
+        if claim and spec.final:
+            prompt += (
+                "\n最后的整理用同一个 JSON 的 opportunity 字段装成「说法体检单」："
+                "title=这说法在说什么，audience=谁在这么说，"
+                "support=站得住的理由（写成「条件＋理由」），risks=反例与边界，"
+                "assumptions=还缺什么证据，next_steps=能信到什么程度、实际怎么用。\n"
             )
         if plan is not None and plan.moderator:
             wrap_only = "" if agenda_layer_done(history, mode) else (

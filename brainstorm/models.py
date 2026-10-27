@@ -242,6 +242,9 @@ class DiscussionSession:
         if self.mode == "event":
             lines = ["八个席位是同一模型扮演的八种说话方式，并非八个独立的真实 AI。"]
             lines.append("席位性格来自八卦的传统引申（说卦传的性与类象），不是心理学测评，也不能拿来判断真人。")
+        elif self.mode == "claim":
+            lines = ["八个席位是同一模型扮演的八种拆解位置，并非八个独立的真实 AI。"]
+            lines.append("他们站在同一个说法的不同位置上：有人替它说话，有人找反例，不是八个人的真实意见。")
         else:
             lines = ["九个角色代表不同职责视角，并非九个独立的真实 AI。"]
         if "模型生成" in origins:

@@ -774,7 +774,7 @@ class LobbyPage(QWidget):
         bar = QHBoxLayout()
         bar.setSpacing(10)
         self.mode_buttons: dict[str, QPushButton] = {}
-        for key in ("event", "business"):
+        for key in ("event", "business", "claim"):
             tab = QPushButton(SECTION_TEXT[key]["tab_text"])
             tab.setObjectName("tableTab")
             tab.setCheckable(True)
@@ -1101,11 +1101,12 @@ class LobbyPage(QWidget):
         )
 
     def _quick(self) -> None:
-        selected = (
-            {"trend", "need", "builder", "skeptic"}
-            if self.mode == "business"
-            else {"qian", "li", "kan", "dui"}
-        )
+        quick = {
+            "business": {"trend", "need", "builder", "skeptic"},
+            "event": {"qian", "li", "kan", "dui"},
+            "claim": {"claim_advocate", "claim_skeptic", "claim_data", "claim_boundary"},
+        }
+        selected = quick.get(self.mode, quick["business"])
         for card in self._cards:
             card.setChecked(card.role.id in selected)
             card.set_down_style(card.role.id not in selected)
@@ -1372,12 +1373,10 @@ class RoundtablePage(QWidget):
 
     def _show_section_badge(self, session: DiscussionSession) -> None:
         """Say which table you are at, so the two sections are never ambiguous."""
-        if session.mode == "event":
-            self.section_label.setText("八卦桌 · 事件讨论")
-            self.section_label.setVisible(True)
-        else:
-            self.section_label.setText("")
-            self.section_label.setVisible(False)
+        names = {"event": "八卦桌 · 事件讨论", "claim": "说法桌 · 观点讨论"}
+        name = names.get(session.mode, "")
+        self.section_label.setText(name)
+        self.section_label.setVisible(bool(name))
 
     def _session_ready(self, session: DiscussionSession) -> None:
         self.session = session

@@ -73,6 +73,19 @@ class QtUiTests(unittest.TestCase):
         self.assertEqual({chip.role.id for chip in lobby.role_chips}, business_ids)
         self.assertEqual(lobby.topic.placeholderText(), SECTION_TEXT["business"]["topic_placeholder"])
 
+    def test_lobby_has_a_third_table_for_a_claim(self):
+        from brainstorm.roles import CLAIM_ROLES, SECTION_TEXT
+
+        lobby = LobbyPage(self.store)
+        self.assertEqual(set(lobby.mode_buttons), {"event", "business", "claim"})
+        lobby.mode_buttons["claim"].click()
+        self.assertEqual(lobby.mode, "claim")
+        self.assertEqual(len(lobby.role_chips), 8)
+        self.assertEqual(lobby.start_button.text(), SECTION_TEXT["claim"]["start_button"])
+        self.assertIn("说法", SECTION_TEXT["claim"]["archive_title"])
+        lobby.mode_buttons["business"].click()
+        self.assertEqual(lobby.mode, "business")
+
     def test_lobby_has_explicit_window_and_exit_controls(self):
         lobby = LobbyPage(self.store)
         labels = {button.text() for button in lobby.findChildren(QPushButton)}

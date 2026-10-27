@@ -20,19 +20,20 @@ from brainstorm.config import AppConfig
 from brainstorm.export import export_json, export_markdown
 from brainstorm.llm import ProviderFailure, TurnSpec
 from brainstorm.providers import resolve_providers
-from brainstorm.roles import DEFAULT_ROLES, EVENT_ROLES, face_label
+from brainstorm.roles import CLAIM_ROLES, DEFAULT_ROLES, EVENT_ROLES, face_label
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("topic")
     parser.add_argument("--extra", type=int, default=6, help="首批之后逐条追加的发言数")
-    parser.add_argument("--section", choices=("business", "event"), default="business",
-                        help="business=商业痛点九个职业席位；event=事件讨论八个八卦席位")
+    parser.add_argument("--section", choices=("business", "event", "claim"), default="business",
+                        help="business=商业痛点；event=事件讨论；claim=观点讨论（拆一个说法）")
     parser.add_argument("--out", default="artifacts")
     args = parser.parse_args()
 
-    roles = EVENT_ROLES if args.section == "event" else DEFAULT_ROLES
+    roles = {"event": EVENT_ROLES, "claim": CLAIM_ROLES}.get(args.section, DEFAULT_ROLES)
+    show_face = args.section == "event"
 
     config = AISettingsStore().load(AppConfig.from_environment())
     provider, _news, status = resolve_providers(config)
@@ -54,7 +55,7 @@ def main() -> int:
     print(f"[i] 首批 {len(session.utterances)} 条，用时 {time.perf_counter() - t:.1f}s", flush=True)
     for index, item in enumerate(session.utterances, 1):
         print(f"    {index:2d}. {item.speaker_name} · {item.phase} · {item.kind.value} · {item.intent}"
-              f" · {face_label(item.face) or '—'}", flush=True)
+              + (f" · {face_label(item.face) or '—'}" if show_face else ""), flush=True)
 
     for step in range(args.extra):
         session.rebuild_state()
@@ -76,7 +77,8 @@ def main() -> int:
             provider.last_state_refresh = None
         note = f" · 质检重写：{item.review_note}" if item.review_note else ""
         print(f"[{step + 1}/{args.extra}] {item.speaker_name} · {item.phase} · {item.intent}"
-              f" · {face_label(item.face) or '—'} · 回应={item.replies_to or '无'} ({time.perf_counter() - t:.1f}s){note}", flush=True)
+              + (f" · {face_label(item.face) or '—'}" if show_face else "")
+              + f" · 回应={item.replies_to or '无'} ({time.perf_counter() - t:.1f}s){note}", flush=True)
 
     print("[i] 生成结束总结中……", flush=True)
     t = time.perf_counter()
