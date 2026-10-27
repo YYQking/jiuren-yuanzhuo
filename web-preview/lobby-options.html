@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>三个大厅方案 · 挑一个</title>
+<style>
+  :root {
+    --bg: #0b0a08;
+    --ink: #efe7d7;
+    --ink-dim: #9e9689;
+    --gold: #c9a45c;
+    --gold-hi: #f0d9a6;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    display: flex;
+    flex-direction: column;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    overflow: hidden;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    padding: 14px 20px;
+    border-bottom: 1px solid rgba(201, 164, 92, 0.16);
+    background: linear-gradient(180deg, rgba(24, 20, 15, 0.9), rgba(11, 10, 8, 0.9));
+  }
+  .brand {
+    font-family: "Songti SC", "SimSun", serif;
+    font-size: 16px;
+    letter-spacing: 0.14em;
+    color: var(--gold-hi);
+    white-space: nowrap;
+  }
+  .brand small {
+    display: block;
+    font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    color: rgba(201, 164, 92, 0.6);
+    margin-top: 3px;
+  }
+  .tabs { display: flex; gap: 8px; }
+  .tab {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px 16px;
+    border: 1px solid rgba(201, 164, 92, 0.18);
+    border-radius: 8px;
+    background: rgba(20, 17, 13, 0.6);
+    color: var(--ink-dim);
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 180ms ease;
+    text-align: left;
+  }
+  .tab b { font-weight: 500; color: rgba(239, 231, 215, 0.86); }
+  .tab span { font-size: 10px; letter-spacing: 0.06em; color: rgba(158, 150, 137, 0.8); }
+  .tab:hover { border-color: rgba(201, 164, 92, 0.4); }
+  .tab.on {
+    border-color: rgba(240, 217, 166, 0.6);
+    background: linear-gradient(180deg, rgba(201, 164, 92, 0.18), rgba(201, 164, 92, 0.06));
+    color: var(--gold-hi);
+  }
+  .tab.on b { color: var(--gold-hi); }
+  .grow { flex: 1; }
+  .meta {
+    font-size: 12px;
+    color: rgba(158, 150, 137, 0.9);
+    text-align: right;
+    max-width: 44ch;
+    line-height: 1.6;
+  }
+  .open {
+    padding: 8px 16px;
+    border: 1px solid rgba(201, 164, 92, 0.4);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--gold);
+    font-size: 12px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .open:hover { border-color: var(--gold-hi); color: var(--gold-hi); }
+  main { flex: 1; position: relative; background: #08070a; }
+  iframe { width: 100%; height: 100%; border: 0; display: block; }
+</style>
+</head>
+<body>
+  <header>
+    <div class="brand">九人圆桌 · 大厅<small>三个方向，挑一个</small></div>
+    <div class="tabs" id="tabs">
+      <button class="tab" data-src="lobby-a.html" type="button">
+        <b>A 进场</b><span>推门进去，有人问你</span>
+      </button>
+      <button class="tab" data-src="lobby-b.html" type="button">
+        <b>B 发牌</b><span>牌摊在桌上，挑人挑事</span>
+      </button>
+      <button class="tab" data-src="lobby-c.html" type="button">
+        <b>C 俯视</b><span>站在门口看两张桌</span>
+      </button>
+    </div>
+    <div class="grow"></div>
+    <p class="meta" id="meta"></p>
+    <button class="open" id="openBtn" type="button">单独打开</button>
+  </header>
+  <main><iframe id="frame" title="大厅方案预览"></iframe></main>
+
+<script>
+const META = {
+  'lobby-a.html': 'A：整个大厅是一场对话。荷官在门口问你今晚坐哪张桌，你选完他接着问你聊什么事，然后他把牌一收，桌子亮起来。只有一条路，不用想自己在哪。',
+  'lobby-b.html': 'B：一进门牌已经摊在桌上了，八张牌就是八个人，点一下翻过去谁就不上桌；话题写在桌边那张单子上，底下按开局。所有东西都在台面上，看得见摸得着。',
+  'lobby-c.html': 'C：站在门口俯视整间屋。两张桌并排，点哪张就走过去、推近，八个座位的名字浮出来，然后写议题。空间感最强，但要点的地方多。',
+};
+
+const frame = document.getElementById('frame');
+const meta = document.getElementById('meta');
+const openBtn = document.getElementById('openBtn');
+let current = 'lobby-a.html';
+
+function pick(src, btn) {
+  current = src;
+  frame.src = src;
+  meta.textContent = META[src] || '';
+  document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('on', t === btn));
+}
+
+document.querySelectorAll('.tab').forEach((btn, i) => {
+  btn.addEventListener('click', () => pick(btn.dataset.src, btn));
+  if (i === 0) pick(btn.dataset.src, btn);
+});
+
+openBtn.addEventListener('click', () => window.open(current, '_blank'));
+</script>
+</body>
+</html>

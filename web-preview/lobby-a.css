@@ -1,0 +1,247 @@
+/* 方案 A：进门。
+   画面先给一个"你刚走进来"的房间——地板、远处一张暗着的桌子、八个人的座位影子，
+   然后底部弹出一句话的对话框。选桌、写议题、开桌全部在这一个框里往下走，
+   不跳页、不开新窗口。 */
+
+.room {
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+  background:
+    radial-gradient(60% 44% at 50% 8%, rgba(255, 214, 150, 0.10), transparent 72%),
+    linear-gradient(180deg, #080706 0%, #0b0908 52%, #120d09 100%);
+}
+
+/* 左上角：这一幕的名字 */
+.act {
+  position: absolute;
+  left: 40px;
+  top: 26px;
+  margin: 0;
+  font-size: 10px;
+  letter-spacing: 0.4em;
+  color: rgba(201, 164, 92, 0.55);
+  z-index: 5;
+}
+
+/* ── 场景 ─────────────────────────────────────────── */
+.scene { position: absolute; inset: 0; }
+.floor-plane {
+  position: absolute;
+  left: -20%;
+  right: -20%;
+  bottom: -6%;
+  height: 62%;
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.022) 0 1px, transparent 1px 64px),
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.018) 0 1px, transparent 1px 52px),
+    linear-gradient(180deg, #120d09, #0a0806 62%, #060504);
+  transform: perspective(760px) rotateX(52deg);
+  transform-origin: 50% 100%;
+  opacity: 0.9;
+}
+
+/* 远处那张桌子：暗的，等你走近才亮 */
+.far-table {
+  position: absolute;
+  left: 50%;
+  top: 24%;
+  width: 620px;
+  height: 300px;
+  transform: translateX(-50%);
+  filter: brightness(0.78) saturate(0.85);
+}
+/* 桌上方吊着一盏暗着的灯：光还没全开，只留一团暖晕 */
+.far-lamp {
+  position: absolute;
+  left: 50%;
+  top: 4%;
+  width: 96px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  z-index: 1;
+}
+.far-lamp .fl-cord { width: 1px; height: 42px; background: linear-gradient(180deg, rgba(160, 140, 110, 0.1), rgba(160, 140, 110, 0.4)); }
+.far-lamp .fl-shade {
+  width: 96px;
+  height: 34px;
+  border-radius: 48px 48px 8px 8px / 26px 26px 6px 6px;
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.12) 40%, rgba(0, 0, 0, 0.45)),
+    linear-gradient(90deg, #1a1108, #4e3518 22%, #a67a3d 44%, #6d4b22 68%, #1e1409);
+  box-shadow: 0 0 40px 12px rgba(255, 196, 120, 0.12);
+}
+.ft-felt {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background:
+    radial-gradient(62% 62% at 50% 38%, #27553c 0%, #1b3c2a 48%, #11241a 78%, #0a150f 100%);
+  box-shadow:
+    0 0 0 1px rgba(201, 164, 92, 0.16),
+    inset 0 10px 30px rgba(0, 0, 0, 0.6),
+    0 40px 70px rgba(0, 0, 0, 0.6);
+}
+.ft-ring {
+  position: absolute;
+  inset: -14px -10px;
+  border-radius: 50%;
+  border: 1px solid rgba(201, 164, 92, 0.22);
+}
+.ft-seats { position: absolute; inset: 0; }
+/* 空椅子：小一点的圆座 + 一圈铜色靠背，不是一坨黑球 */
+.ft-seats i {
+  position: absolute;
+  width: 26px;
+  height: 26px;
+  margin: -13px 0 0 -13px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 30%, #6b5d47, #241e16 72%);
+  box-shadow:
+    0 0 0 1px rgba(201, 164, 92, 0.26),
+    0 5px 12px rgba(0, 0, 0, 0.65),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+/* 空气：一层雾，把远处压暗 */
+.fog {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(70% 50% at 50% 20%, transparent 30%, rgba(0, 0, 0, 0.55) 100%),
+    linear-gradient(180deg, transparent 40%, rgba(0, 0, 0, 0.72) 100%);
+  pointer-events: none;
+}
+
+/* ── 对话框 ───────────────────────────────────────── */
+.dialog {
+  position: absolute;
+  left: 50%;
+  bottom: 46px;
+  width: min(1080px, 82vw);
+  transform: translateX(-50%);
+  padding: 18px 26px 20px;
+  z-index: 6;
+  background: linear-gradient(180deg, rgba(16, 14, 11, 0.94), rgba(9, 8, 6, 0.96));
+  border: 1px solid rgba(201, 164, 92, 0.30);
+  border-radius: 4px;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.7),
+    0 26px 60px rgba(0, 0, 0, 0.7),
+    inset 0 1px 0 rgba(255, 236, 200, 0.07);
+}
+/* 对话框四角的小铜角，像装订的相框 */
+.dialog::before,
+.dialog::after {
+  content: "";
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border: 1px solid rgba(201, 164, 92, 0.55);
+  pointer-events: none;
+}
+.dialog::before { left: -1px; top: -1px; border-right: 0; border-bottom: 0; }
+.dialog::after { right: -1px; bottom: -1px; border-left: 0; border-top: 0; }
+
+.who { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.who-face {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  font-family: "Songti SC", "SimSun", serif;
+  font-size: 14px;
+  color: #f3e6cf;
+  background: linear-gradient(180deg, #7d2a20, #521a13);
+  box-shadow: 0 0 0 1px rgba(255, 220, 190, 0.22), 0 4px 10px rgba(0, 0, 0, 0.5);
+}
+.who-name { font-size: 11px; letter-spacing: 0.26em; color: rgba(201, 164, 92, 0.75); }
+
+.say {
+  margin: 0 0 16px;
+  min-height: 58px;
+  font-family: "Songti SC", "SimSun", "Noto Serif SC", serif;
+  font-size: 21px;
+  line-height: 1.62;
+  color: #eee4d2;
+  letter-spacing: 0.02em;
+}
+/* 打字机光标 */
+.say .caret {
+  display: inline-block;
+  width: 8px;
+  height: 18px;
+  margin-left: 2px;
+  background: rgba(240, 217, 166, 0.75);
+  animation: blink 900ms steps(1) infinite;
+  vertical-align: -2px;
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+.choices { display: flex; flex-direction: column; gap: 8px; }
+.choice {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 10px 16px;
+  text-align: left;
+  font-size: 14px;
+  color: rgba(239, 231, 215, 0.9);
+  background: rgba(201, 164, 92, 0.05);
+  border: 1px solid rgba(201, 164, 92, 0.18);
+  border-radius: 3px;
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+.choice:hover {
+  background: rgba(201, 164, 92, 0.14);
+  border-color: rgba(240, 217, 166, 0.5);
+  transform: translateX(3px);
+}
+.choice b { font-weight: 400; color: var(--gold-hi); }
+.choice small { font-size: 11px; color: var(--ink-faint); }
+.choice::before {
+  content: "▸";
+  color: rgba(201, 164, 92, 0.6);
+  font-size: 11px;
+}
+
+.write { display: flex; gap: 12px; align-items: center; }
+.write[hidden] { display: none; }
+.write input {
+  flex: 1;
+  min-width: 0;
+  padding: 11px 4px;
+  border: 0;
+  border-bottom: 1px solid rgba(201, 164, 92, 0.4);
+  background: transparent;
+  color: var(--ink);
+  font-family: "Songti SC", "SimSun", "Noto Serif SC", serif;
+  font-size: 20px;
+  outline: none;
+}
+.write input::placeholder { color: rgba(158, 150, 137, 0.45); }
+.ok {
+  padding: 10px 22px;
+  font-size: 13px;
+  letter-spacing: 0.12em;
+  color: #25180a;
+  background: linear-gradient(180deg, #d6b478, #a07c3c);
+  border: 1px solid rgba(255, 233, 190, 0.45);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.skip {
+  position: absolute;
+  right: 40px;
+  bottom: 14px;
+  margin: 0;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  color: rgba(158, 150, 137, 0.5);
+  z-index: 6;
+}

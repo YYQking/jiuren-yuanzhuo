@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>九人圆桌 · 大厅 A · 进门</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="lobby-a.css">
+</head>
+<body data-face="yang">
+<div class="room">
+
+  <p class="act">第一幕 · 进门</p>
+
+  <!-- 场景：地板、一张暗着的桌子、八个座位的影子 -->
+  <div class="scene" aria-hidden="true">
+    <div class="floor-plane"></div>
+    <div class="far-lamp"><span class="fl-cord"></span><span class="fl-shade"></span></div>
+    <div class="far-table">
+      <span class="ft-felt"></span>
+      <span class="ft-ring"></span>
+      <span class="ft-seats" id="ftSeats"></span>
+    </div>
+    <div class="fog"></div>
+  </div>
+
+  <!-- 底部对话框：就像 RPG 里那样，一句一句往下走 -->
+  <div class="dialog">
+    <div class="who">
+      <span class="who-face">荷</span>
+      <span class="who-name" id="whoName">荷官</span>
+    </div>
+    <p class="say" id="say"></p>
+
+    <div class="choices" id="choices"></div>
+
+    <div class="write" id="writeBox" hidden>
+      <input id="topicInput" type="text" spellcheck="false"
+             placeholder="例：某小区物业把业主的固定车位转租给了外面的人">
+      <button class="ok" id="okBtn" type="button">就聊这个</button>
+    </div>
+  </div>
+
+  <p class="skip" id="skip">点一下继续 · Esc 退出</p>
+</div>
+<script src="lobby-a.js"></script>
+</body>
+</html>

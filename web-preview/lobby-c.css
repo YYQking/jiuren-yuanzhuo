@@ -1,0 +1,272 @@
+/* 方案 C：俯视房间。
+   大厅就是一张从天花板往下看的地图：一条地毯、两张桌、门口在下面。
+   点哪张桌，镜头就推近哪张，桌上浮出一张单据——整套选择只有"点哪个桌"这一个动作。 */
+
+.plan {
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+  background:
+    /* 地砖的缝：很淡，只是让地面不像一块黑 */
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.016) 0 1px, transparent 1px 88px),
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.013) 0 1px, transparent 1px 72px),
+    radial-gradient(70% 60% at 50% 40%, #16130e 0%, #0b0a08 58%, #050404 100%);
+}
+/* 顶上的墙：房间得有个边界，不然两张桌像浮在黑里 */
+.plan::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 9%;
+  background: linear-gradient(180deg, #100d0a, #0a0806);
+  border-bottom: 1px solid rgba(201, 164, 92, 0.10);
+  z-index: 1;
+}
+.plan::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(58% 54% at 50% 44%, transparent 34%, rgba(0, 0, 0, 0.72) 100%);
+  z-index: 8;
+}
+
+
+.plan-title {
+  position: absolute;
+  left: 40px;
+  top: 28px;
+  margin: 0;
+  z-index: 9;
+  font-size: 10px;
+  letter-spacing: 0.34em;
+  color: rgba(201, 164, 92, 0.6);
+}
+
+.plan-room {
+  position: absolute;
+  inset: 0;
+  transition: transform 700ms cubic-bezier(.22,.9,.24,1);
+  transform-origin: 50% 50%;
+}
+
+/* 地上的一条长地毯：给房间一个方向 */
+.carpet {
+  position: absolute;
+  left: 50%;
+  top: 10%;
+  width: 32%;
+  height: 78%;
+  transform: translateX(-50%);
+  border-radius: 6px;
+  background:
+    repeating-linear-gradient(0deg, rgba(201, 164, 92, 0.05) 0 2px, transparent 2px 24px),
+    linear-gradient(180deg, rgba(74, 22, 18, 0.42), rgba(40, 12, 10, 0.5));
+  border-left: 1px solid rgba(201, 164, 92, 0.10);
+  border-right: 1px solid rgba(201, 164, 92, 0.10);
+  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 12%, #000 88%, transparent 100%);
+  mask-image: linear-gradient(180deg, transparent 0, #000 12%, #000 88%, transparent 100%);
+}
+
+/* ── 一张桌（从上面看） ───────────────────────────── */
+.tbl {
+  position: absolute;
+  top: 50%;
+  width: 420px;
+  height: 260px;
+  padding: 0;
+  transform: translate(-50%, -50%);
+  border: 0;
+  background: none;
+  cursor: pointer;
+  transition:
+    transform 700ms cubic-bezier(.22,.9,.24,1),
+    left 700ms cubic-bezier(.22,.9,.24,1),
+    opacity 500ms ease,
+    filter 500ms ease;
+}
+/* 每张桌底下有一圈光，像头顶那盏灯照下来的 */
+.tbl::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 132%;
+  height: 150%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(255, 214, 156, 0.10), transparent 72%);
+  pointer-events: none;
+  z-index: -1;
+}
+.tbl[data-mode="business"] { left: 26%; }
+.tbl[data-mode="event"] { left: 74%; }
+
+.tbl-felt {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background:
+    radial-gradient(64% 64% at 50% 36%, #2d684a 0%, #1e4a34 46%, #143021 78%, #0b1a11 100%);
+  box-shadow:
+    0 0 0 1px rgba(201, 164, 92, 0.2),
+    inset 0 8px 26px rgba(0, 0, 0, 0.55),
+    0 26px 60px rgba(0, 0, 0, 0.6);
+}
+.tbl:hover .tbl-felt { box-shadow: 0 0 0 1px rgba(240, 217, 166, 0.55), inset 0 8px 26px rgba(0, 0, 0, 0.5), 0 26px 60px rgba(0, 0, 0, 0.6); }
+
+.tbl-seats { position: absolute; inset: 0; }
+/* 座位（俯视看是椅子）：小圆 + 一圈铜色靠背，别做成一个大白球 */
+.tbl-seats i {
+  position: absolute;
+  width: 15px;
+  height: 15px;
+  margin: -7.5px 0 0 -7.5px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 34%, #cbb691, #5e5344 68%, #2c2620 100%);
+  box-shadow:
+    0 0 0 1px rgba(20, 14, 8, 0.85),
+    0 0 0 3px rgba(201, 164, 92, 0.16),
+    0 3px 7px rgba(0, 0, 0, 0.55);
+}
+
+.tbl-plate {
+  position: absolute;
+  left: 50%;
+  bottom: -34px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  font-family: "Songti SC", "SimSun", serif;
+  font-size: 15px;
+  letter-spacing: 0.12em;
+  color: rgba(239, 231, 215, 0.82);
+  white-space: nowrap;
+}
+
+/* 桌心一块小铜牌：推近了才显出来，免得桌子中间空得像一口池塘 */
+.tbl-core {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  font-family: "Songti SC", "SimSun", serif;
+  font-size: 13px;
+  letter-spacing: 0.34em;
+  text-indent: 0.34em;
+  color: rgba(201, 164, 92, 0.55);
+  opacity: 0;
+  transition: opacity 400ms ease 200ms;
+  pointer-events: none;
+}
+.plan.zoomed .tbl.is-picked .tbl-core { opacity: 1; }
+.plan.zoomed .tbl.is-picked .tbl-plate { opacity: 0; }
+.tbl-name {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font-family: "Songti SC", "SimSun", serif;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  color: rgba(239, 231, 215, 0.9);
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 400ms ease 260ms;
+  pointer-events: none;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
+}
+.plan.zoomed .tbl.is-picked .tbl-name { opacity: 1; }
+.tbl-plate small { font-size: 9px; letter-spacing: 0.2em; color: rgba(201, 164, 92, 0.6); }
+
+/* 选中之后：被选的那张推到画面中央放大，另一张淡出 */
+.plan.zoomed .tbl { filter: brightness(0.4); opacity: 0.35; }
+.plan.zoomed .tbl.is-picked {
+  left: 50%;
+  filter: none;
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1.55);
+  z-index: 6;
+}
+.plan.zoomed .carpet { opacity: 0.25; }
+.plan.zoomed .door { opacity: 0; }
+
+.door {
+  position: absolute;
+  left: 50%;
+  bottom: 20px;
+  transform: translateX(-50%);
+  margin: 0;
+  font-size: 10px;
+  letter-spacing: 0.4em;
+  color: rgba(158, 150, 137, 0.6);
+  transition: opacity 400ms ease;
+}
+.door::before {
+  content: "";
+  display: block;
+  width: 120px;
+  height: 2px;
+  margin: 0 auto 8px;
+  background: linear-gradient(90deg, transparent, rgba(201, 164, 92, 0.34), transparent);
+}
+
+/* ── 坐下之后浮出的单据 ───────────────────────────── */
+.note {
+  position: absolute;
+  left: 50%;
+  bottom: 54px;
+  width: min(720px, 68vw);
+  transform: translateX(-50%);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 20px 15px;
+  background: linear-gradient(180deg, rgba(18, 15, 11, 0.96), rgba(9, 8, 6, 0.97));
+  border: 1px solid rgba(201, 164, 92, 0.32);
+  border-radius: 6px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.7);
+  animation: noteIn 420ms cubic-bezier(.22,.9,.24,1);
+}
+@keyframes noteIn {
+  from { opacity: 0; transform: translate(-50%, 14px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+.note-who { margin: 0; font-size: 10px; letter-spacing: 0.3em; color: rgba(201, 164, 92, 0.7); }
+.note input {
+  border: 0;
+  border-bottom: 1px solid rgba(201, 164, 92, 0.32);
+  background: transparent;
+  color: var(--ink);
+  font-family: "Songti SC", "SimSun", "Noto Serif SC", serif;
+  font-size: 21px;
+  padding: 2px 0 8px;
+  outline: none;
+}
+.note-row { display: flex; align-items: center; gap: 12px; }
+.start {
+  padding: 9px 30px;
+  font-family: "Songti SC", "SimSun", serif;
+  font-size: 14px;
+  letter-spacing: 0.3em;
+  text-indent: 0.3em;
+  color: #241705;
+  background: linear-gradient(180deg, #d9b87c, #a5813f);
+  border: 1px solid rgba(255, 238, 200, 0.45);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.back {
+  padding: 8px 16px;
+  font-size: 11px;
+  color: rgba(239, 231, 215, 0.6);
+  background: transparent;
+  border: 1px solid rgba(201, 164, 92, 0.2);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.back:hover { color: var(--gold-hi); border-color: rgba(201, 164, 92, 0.45); }

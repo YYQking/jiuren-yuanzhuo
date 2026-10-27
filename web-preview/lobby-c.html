@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>九人圆桌 · 大厅 C · 俯视房间</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="lobby-c.css">
+</head>
+<body data-face="yang">
+<div class="plan">
+
+  <p class="plan-title">门口 · 你还没坐</p>
+
+  <!-- 俯视的房间：两张桌，一条地毯，门口在下面 -->
+  <div class="plan-room" id="room">
+    <div class="carpet"></div>
+
+    <button class="tbl" data-mode="business" data-name="商业痛点桌" data-count="9" type="button">
+      <span class="tbl-felt"></span><span class="tbl-core"></span>
+      <span class="tbl-seats"></span>
+      <span class="tbl-plate">商业痛点桌<small>九个人</small></span>
+    </button>
+
+    <button class="tbl" data-mode="event" data-name="八卦桌" data-count="8" type="button">
+      <span class="tbl-felt"></span><span class="tbl-core"></span>
+      <span class="tbl-seats"></span>
+      <span class="tbl-plate">八卦桌<small>八个人</small></span>
+    </button>
+
+    <p class="door">门口</p>
+  </div>
+
+  <!-- 坐下之后才出现的单据 -->
+  <div class="note" id="note" hidden>
+    <p class="note-who" id="noteWho">八卦桌 · 8 人</p>
+    <input id="noteInput" type="text" spellcheck="false"
+           value="某小区物业把业主的固定车位转租给了外面的人，业主群吵了一整天">
+    <div class="note-row">
+      <button class="start" id="startBtn" type="button">开桌</button>
+      <button class="back" id="backBtn" type="button">换一张桌</button>
+    </div>
+  </div>
+</div>
+<script src="lobby-c.js"></script>
+</body>
+</html>

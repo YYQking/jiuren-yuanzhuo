@@ -42,10 +42,16 @@ def main() -> int:
     def step(i: int) -> None:
         # 一次一次点，给每次点击留出过场时间，保证截到的是"停住"的那一帧
         if i >= clicks:
-            QTimer.singleShot(1200, freeze)
+            QTimer.singleShot(1200, run_extra)
             return
         view.page().runJavaScript("document.body.click();")
         QTimer.singleShot(150, lambda: step(i + 1))
+
+    def run_extra() -> None:
+        # --js "..."：截图前先跑一段脚本（比如点一下「发牌」）
+        if "--js" in sys.argv:
+            view.page().runJavaScript(sys.argv[sys.argv.index("--js") + 1])
+        QTimer.singleShot(1200, freeze)
 
     def freeze() -> None:
         view.page().runJavaScript(FREEZE)

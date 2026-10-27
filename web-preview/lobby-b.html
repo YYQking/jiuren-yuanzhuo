@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>九人圆桌 · 大厅 B · 发牌</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="lobby-b.css">
+</head>
+<body data-face="yang">
+<div class="hall">
+
+  <header class="hall-top">
+    <p class="tabs">
+      <button class="tab is-on" data-mode="event" type="button">八卦桌 <small>8 人</small></button>
+      <button class="tab" data-mode="business" type="button">商业痛点桌 <small>9 人</small></button>
+    </p>
+    <p class="hall-hint" id="hallHint">先发牌，把不想让上桌的那张按下去。</p>
+  </header>
+
+  <!-- 桌面：牌在这里摊开 -->
+  <main class="deck-area">
+    <div class="deck" id="deck"></div>
+
+    <div class="slip">
+      <label class="slip-label" for="slipInput">这一桌聊什么</label>
+      <input id="slipInput" type="text" spellcheck="false"
+             value="某小区物业把业主的固定车位转租给了外面的人，业主群吵了一整天">
+    </div>
+  </main>
+
+  <footer class="hall-foot">
+    <button class="deal" id="dealBtn" type="button">发 牌</button>
+    <button class="open" id="openBtn" type="button" disabled>开 桌</button>
+    <p class="foot-note" id="footNote">桌上 0 张</p>
+  </footer>
+</div>
+<script src="lobby-b.js"></script>
+</body>
+</html>

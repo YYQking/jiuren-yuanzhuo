@@ -1,0 +1,222 @@
+/* 方案 B：发牌。
+   大厅只有一张桌面，和一副牌。发牌 → 八张脸摊开在绒面上 → 不想要的按下去 → 写议题 → 开桌。
+   整个流程只有两个动作（发牌、按下去），比填表单快得多。 */
+
+.hall {
+  position: relative;
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  padding: 26px 44px 22px;
+  gap: 14px;
+  background:
+    radial-gradient(56% 40% at 50% 6%, rgba(255, 216, 156, 0.10), transparent 70%),
+    radial-gradient(120% 90% at 50% 122%, rgba(80, 22, 17, 0.55), transparent 62%),
+    #070605;
+}
+.hall::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(62% 52% at 50% 48%, transparent 46%, rgba(0, 0, 0, 0.6) 100%);
+}
+
+/* ── 顶：两张牌堆 ─────────────────────────────────── */
+.hall-top {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+.tabs { display: flex; gap: 10px; margin: 0; }
+.tab {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 9px 20px;
+  font-family: "Songti SC", "SimSun", serif;
+  font-size: 16px;
+  letter-spacing: 0.1em;
+  color: rgba(239, 231, 215, 0.55);
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(201, 164, 92, 0.16);
+  border-bottom: 0;
+  border-radius: 8px 8px 0 0;
+  cursor: pointer;
+  transition: color 160ms ease, background 160ms ease, border-color 160ms ease;
+}
+.tab small { font-size: 10px; letter-spacing: 0.06em; color: var(--ink-faint); }
+.tab:hover { color: rgba(239, 231, 215, 0.8); }
+.tab.is-on {
+  color: var(--gold-hi);
+  background: linear-gradient(180deg, rgba(201, 164, 92, 0.13), rgba(201, 164, 92, 0.03));
+  border-color: rgba(201, 164, 92, 0.42);
+}
+.tab.is-on small { color: rgba(201, 164, 92, 0.72); }
+.hall-hint { margin: 0; font-size: 11px; color: var(--ink-faint); }
+
+/* ── 桌面 ─────────────────────────────────────────── */
+.deck-area {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+}
+.deck-area::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(1120px, 88vw);
+  height: 430px;
+  transform: translate(-50%, -52%);
+  border-radius: 50%;
+  background:
+    radial-gradient(66% 66% at 50% 40%, #2c6749 0%, #1e4934 46%, #143021 78%, #0c1c13 100%);
+  box-shadow:
+    0 0 0 1px rgba(201, 164, 92, 0.20),
+    inset 0 12px 40px rgba(0, 0, 0, 0.55),
+    0 34px 70px rgba(0, 0, 0, 0.6);
+}
+
+/* 一副没发的牌：一叠背面朝上 */
+.deck {
+  position: relative;
+  width: 100%;
+  height: 340px;
+  display: block;
+}
+.card {
+  position: absolute;
+  left: 50%;
+  top: 46%;
+  width: 112px;
+  height: 158px;
+  margin: -79px 0 0 -56px;
+  border-radius: 7px;
+  background: linear-gradient(180deg, #f2e7d2, #e2d3b6);
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(90, 70, 40, 0.35);
+  transition: transform 460ms cubic-bezier(.22,.9,.24,1), opacity 300ms ease, box-shadow 300ms ease;
+  cursor: pointer;
+  overflow: hidden;
+  will-change: transform;
+}
+/* 牌背：没发之前的叠放态 */
+.card.back {
+  background:
+    repeating-linear-gradient(45deg, rgba(201, 164, 92, 0.16) 0 6px, transparent 6px 12px),
+    linear-gradient(180deg, #2a2218, #17120c);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(201, 164, 92, 0.24);
+}
+.card .face {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 100%;
+  padding: 12px 8px;
+}
+.card img {
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 32%, #2a2419, #14110c 100%);
+}
+.card .nm {
+  font-family: "Songti SC", "SimSun", "Noto Serif SC", serif;
+  font-size: 15px;
+  letter-spacing: 0.1em;
+  color: #2a2015;
+}
+.card .gua {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: rgba(58, 44, 26, 0.66);
+}
+/* 牌面右下角一格小印：阳／阴 */
+.card .mark {
+  position: absolute;
+  right: 7px;
+  bottom: 7px;
+  padding: 2px 5px 3px;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: #f6e8cf;
+  background: linear-gradient(180deg, #8f3125, #6d2119);
+  border-radius: 2px;
+}
+/* 被按下去的牌：往下沉、变暗、转过一点 */
+.card.down {
+  transform: translate(var(--dx), calc(var(--dy) + 64px)) rotate(var(--rot)) scale(0.94) !important;
+  opacity: 0.28;
+  filter: saturate(0.4);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+/* 下注单：议题写在绒面上 */
+.slip {
+  position: absolute;
+  left: 50%;
+  bottom: 88px;
+  width: min(760px, 66vw);
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 18px 13px;
+  background: rgba(6, 10, 7, 0.55);
+  border: 1px solid rgba(201, 164, 92, 0.22);
+  border-radius: 4px;
+  backdrop-filter: blur(2px);
+}
+.slip-label { font-size: 9px; letter-spacing: 0.34em; color: rgba(201, 164, 92, 0.66); }
+.slip input {
+  border: 0;
+  border-bottom: 1px solid rgba(201, 164, 92, 0.3);
+  background: transparent;
+  color: #efe7d7;
+  font-family: "Songti SC", "SimSun", "Noto Serif SC", serif;
+  font-size: 19px;
+  padding: 2px 0 6px;
+  outline: none;
+}
+
+/* ── 底部 ─────────────────────────────────────────── */
+.hall-foot {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+}
+.deal,
+.open {
+  padding: 10px 34px;
+  font-family: "Songti SC", "SimSun", serif;
+  font-size: 15px;
+  letter-spacing: 0.34em;
+  text-indent: 0.34em;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: filter 160ms ease, transform 160ms ease, opacity 160ms ease;
+}
+.deal {
+  color: #241705;
+  background: linear-gradient(180deg, #d9b87c, #a5813f);
+  border: 1px solid rgba(255, 238, 200, 0.45);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
+}
+.deal:hover { filter: brightness(1.08); transform: translateY(-1px); }
+.open {
+  color: rgba(239, 231, 215, 0.85);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(201, 164, 92, 0.3);
+}
+.open:disabled { opacity: 0.34; cursor: default; }
+.open:not(:disabled):hover { border-color: rgba(240, 217, 166, 0.6); }
+.foot-note { margin: 0; font-size: 11px; color: var(--ink-faint); }
