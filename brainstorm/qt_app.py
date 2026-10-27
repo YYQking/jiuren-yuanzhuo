@@ -5,8 +5,28 @@ from __future__ import annotations
 from pathlib import Path
 import sys
 
-from PySide6.QtCore import QEasingCurve, QPropertyAnimation, QRect, QSize, Qt, Signal
-from PySide6.QtGui import QAction, QFontMetrics, QIcon, QKeySequence
+from PySide6.QtCore import (
+    QEasingCurve,
+    QPoint,
+    QPropertyAnimation,
+    QRect,
+    QRectF,
+    QSequentialAnimationGroup,
+    QSize,
+    Qt,
+    Signal,
+)
+from PySide6.QtGui import (
+    QAction,
+    QBrush,
+    QColor,
+    QFontMetrics,
+    QIcon,
+    QKeySequence,
+    QPainter,
+    QPen,
+    QRadialGradient,
+)
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -73,6 +93,15 @@ def kind_legend() -> str:
     return "\n".join(lines)
 
 
+def card_name(name: str) -> str:
+    """长名字在牌面上断成两行，别让最后孤零零掉一个字下来。"""
+    if " / " in name:
+        return name.replace(" / ", "\n")
+    if len(name) > 6:
+        return name[:4] + "\n" + name[4:]
+    return name
+
+
 def role_tooltip(role: Role) -> str:
     """Hover text for a seat: business seats show their lens, event seats both faces."""
     yang = getattr(role, "yang", "")
@@ -128,6 +157,177 @@ class RoleChip(QPushButton):
         self.setChecked(True)
 
 
+class FeltTable(QWidget):
+    """赌桌的台面：只画那块绿绒椭圆、铜边和头顶打下来的光。卡片是它的子控件。"""
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setMinimumHeight(280)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        rect = QRectF(26, 14, self.width() - 52, self.height() - 40)
+        if rect.width() < 40 or rect.height() < 40:
+            painter.end()
+            return
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(0, 0, 0, 110))
+        painter.drawEllipse(rect.translated(0, 14))
+
+        felt = QRadialGradient(rect.center(), rect.width() * 0.62)
+        felt.setColorAt(0.0, QColor("#35634c"))
+        felt.setColorAt(0.55, QColor("#22422f"))
+        felt.setColorAt(1.0, QColor("#13241a"))
+        painter.setBrush(QBrush(felt))
+        painter.drawEllipse(rect)
+
+        lamp = QRadialGradient(rect.center().x(), rect.top() + rect.height() * 0.20,
+                               rect.width() * 0.34)
+        lamp.setColorAt(0.0, QColor(240, 217, 166, 44))
+        lamp.setColorAt(1.0, QColor(240, 217, 166, 0))
+        painter.setBrush(QBrush(lamp))
+        painter.drawEllipse(rect)
+
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.setPen(QPen(QColor(201, 164, 92, 130), 2))
+        painter.drawEllipse(rect)
+        painter.setPen(QPen(QColor(201, 164, 92, 58), 1))
+        painter.drawEllipse(rect.adjusted(10, 8, -10, -8))
+        painter.end()
+
+
+class SeatCard(QPushButton):
+    """一张座位牌：上半是头像，下面是名字和这一位是干什么的。
+
+    勾上 = 在桌上，按掉 = 牌翻过去、不上桌。
+    """
+
+    CARD_WIDTH = 118
+    CARD_HEIGHT = 196
+
+    def __init__(self, role: Role, parent=None) -> None:
+        super().__init__(parent)
+        self.role = role
+        self.setObjectName("seatCard")
+        self.setCheckable(True)
+        self.setChecked(True)
+        self.setFixedSize(self.CARD_WIDTH, self.CARD_HEIGHT)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setToolTip(role_tooltip(role))
+        self.setAccessibleName(f"{role.name}，{role.duty}")
+        self._scale = 1.0
+        self.setProperty("down", False)
+
+        root = Path(sys._MEIPASS) if getattr(sys, "frozen", False) else Path(__file__).resolve().parent.parent
+        icon = QIcon(str(root / "assets" / "avatars" / f"{role.id}.svg"))
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(9, 12, 9, 9)
+        layout.setSpacing(3)
+        layout.addStretch(1)
+
+        portrait = QLabel()
+        portrait.setFixedSize(72, 72)
+        portrait.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        if not icon.isNull():
+            portrait.setPixmap(icon.pixmap(QSize(72, 72)))
+        else:
+            portrait.setText(role.name[:1])
+            portrait.setStyleSheet("font-size: 26px; color: #2b2417;")
+        portrait.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        layout.addWidget(portrait, 0, Qt.AlignmentFlag.AlignHCenter)
+
+        self.name_label = QLabel(card_name(role.name))
+        self.name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.name_label.setWordWrap(True)
+        self.name_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.name_label.setStyleSheet(
+            "font-family: 'Songti SC', 'SimSun', serif; font-size: 15px; color: #2b2417;"
+        )
+        layout.addWidget(self.name_label)
+
+        trigram = getattr(role, "trigram", "")
+        self.tag_label = QLabel(f"{trigram} · {role.duty}" if trigram else role.duty)
+        self.tag_label.setAlignment(
+            Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop
+        )
+        self.tag_label.setWordWrap(True)
+        self.tag_label.setFixedHeight(40)
+        self.tag_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.tag_label.setStyleSheet("font-size: 9px; color: #7d6c50;")
+        layout.addWidget(self.tag_label)
+        layout.addStretch(1)
+
+        self.mark = QLabel("阳")
+        self.mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.mark.setFixedSize(22, 17)
+        self.mark.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.mark.setStyleSheet(
+            "font-size: 9px; color: #f6ecd8; background: #96302c; border-radius: 3px;"
+        )
+        mark_row = QHBoxLayout()
+        mark_row.setContentsMargins(0, 0, 0, 0)
+        mark_row.addStretch(1)
+        mark_row.addWidget(self.mark)
+        layout.addLayout(mark_row)
+
+        # 牌还没发的时候盖一张牌背：中间压一个「九」字
+        self.back = QLabel("九", self)
+        self.back.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.back.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.back.setStyleSheet(
+            "background: qlineargradient(x1:0, y1:0, x2:1, y2:1,"
+            " stop:0 #4a3a28, stop:0.5 #2a2118, stop:1 #3d3021);"
+            " border: 1px solid #7a6136; border-radius: 10px;"
+            " font-family: 'Songti SC', 'SimSun', serif; font-size: 26px;"
+            " color: #caa96a;"
+        )
+        self.back.setGeometry(0, 0, self.CARD_WIDTH, self.CARD_HEIGHT)
+        self.back.hide()
+
+    def set_face_down(self, face_down: bool) -> None:
+        """没发牌时整张牌盖上牌背，看不出是谁。"""
+        if face_down:
+            self.back.setGeometry(0, 0, self.width(), self.height())
+            self.back.show()
+            self.back.raise_()
+        else:
+            self.back.hide()
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self.back.setGeometry(0, 0, self.width(), self.height())
+
+    def set_down_style(self, down: bool) -> None:
+        """牌翻过去：底变暗、字变灰，跟“还在桌上”的牌一眼分得开。"""
+        self.setProperty("down", down)
+        name_size = max(11, round(15 * self._scale))
+        tag_size = max(8, round(9 * self._scale))
+        name_color = "#6c6455" if down else "#2b2417"
+        tag_color = "#554f45" if down else "#7d6c50"
+        self.name_label.setStyleSheet(
+            "font-family: 'Songti SC', 'SimSun', serif;"
+            f" font-size: {name_size}px; color: {name_color};"
+        )
+        self.tag_label.setStyleSheet(f"font-size: {tag_size}px; color: {tag_color};")
+        self.mark.setText("翻" if down else "阳")
+        style = self.style()
+        style.unpolish(self)
+        style.polish(self)
+        self.update()
+
+    def apply_scale(self, factor: float) -> None:
+        """牌被缩小的时候，字也要跟着缩，不然名字会被牌边切掉。"""
+        if abs(factor - self._scale) < 0.01:
+            return
+        self._scale = factor
+        self.name_label.setFixedHeight(max(20, round(34 * factor)))
+        self.tag_label.setFixedHeight(max(20, round(40 * factor)))
+        self.set_down_style(bool(self.property("down")))
+
+
 class LobbyPage(QWidget):
     start_requested = Signal(str, list, str, bool)
     history_requested = Signal()
@@ -139,209 +339,328 @@ class LobbyPage(QWidget):
     def __init__(self, store: SessionStore, parent=None) -> None:
         super().__init__(parent)
         self.store = store
-        self.role_chips: list[RoleChip] = []
+        self.role_chips: list[SeatCard] = []
         self.mode = "business"
-        self._mode_chips: dict[str, list[RoleChip]] = {}
-        self._role_grids: dict[str, QGridLayout] = {}
+        self._mode_chips: dict[str, list[SeatCard]] = {}
+        self._cards: list[SeatCard] = []
+        self._animations: list[QSequentialAnimationGroup] = []
+        self._dealt = False
+        self._compact = False
         self._build()
         self.set_mode("business")
 
+    # ── 结构 ────────────────────────────────────────────────────────
     def _build(self) -> None:
         self.setObjectName("lobbyPage")
         outer = QVBoxLayout(self)
         outer.setSizeConstraint(QLayout.SizeConstraint.SetNoConstraint)
-        outer.setContentsMargins(70, 46, 70, 54)
-        outer.setSpacing(22)
-        top = QHBoxLayout()
-        title = QLabel("九人圆桌")
-        self.product_title = title
-        title.setFont(title_font(40))
-        title.setStyleSheet(f"color: {COLORS['gold_bright']};")
-        top.addWidget(title)
-        top.addStretch()
-        badge = QLabel("离线模拟 · 未联网 · 观点待核验")
-        self.source_badge = badge
-        badge.setToolTip("离线模拟 · 未联网 · 观点待核验")
-        badge.setStyleSheet(f"color: {COLORS['muted']}; padding: 8px 14px; border: 1px solid #40584a; border-radius: 14px;")
-        top.addWidget(badge)
+        outer.setContentsMargins(48, 26, 48, 22)
+        outer.setSpacing(14)
+
+        header = QHBoxLayout()
+        header.setSpacing(12)
+        self.product_title = QLabel("九人圆桌")
+        self.product_title.setFont(title_font(26))
+        self.product_title.setStyleSheet(f"color: {COLORS['gold_bright']};")
+        header.addWidget(self.product_title)
+        self.tagline = QLabel("挑一张桌子坐进去。进去之前只有一件事：说清楚要聊什么。")
+        self.tagline.setStyleSheet(f"color: {COLORS['dim']}; font-size: 12px;")
+        header.addWidget(self.tagline, 1)
+        self.source_badge = QLabel("本次不获取新闻 · 观点待核验")
+        self.source_badge.setStyleSheet(
+            f"color: {COLORS['muted']}; padding: 6px 12px;"
+            " border: 1px solid #40584a; border-radius: 12px; font-size: 11px;"
+        )
+        header.addWidget(self.source_badge)
+        history = QPushButton("最近讨论")
+        history.clicked.connect(self.history_requested)
+        header.addWidget(history)
+        hotspots = QPushButton("社会热点雷达")
+        hotspots.clicked.connect(self.hotspots_requested)
+        header.addWidget(hotspots)
+        ai_settings = QPushButton("AI 设置")
+        ai_settings.clicked.connect(self.ai_settings_requested)
+        header.addWidget(ai_settings)
         self.window_button = QPushButton("窗口化")
         self.window_button.clicked.connect(self.window_mode_requested)
-        top.addWidget(self.window_button)
+        header.addWidget(self.window_button)
         self.exit_button = QPushButton("退出")
         self.exit_button.clicked.connect(self.exit_requested)
-        top.addWidget(self.exit_button)
-        outer.addLayout(top)
+        header.addWidget(self.exit_button)
+        outer.addLayout(header)
 
-        # 分区切换放在标题下面单独一行：它是整场讨论的前提，不该缩在角色面板角落。
-        section_bar = QHBoxLayout()
-        section_bar.setSpacing(10)
+        # 两张桌：点哪张换哪张，位置就是整场的入口
+        bar = QHBoxLayout()
+        bar.setSpacing(10)
         self.mode_buttons: dict[str, QPushButton] = {}
-        for key in ("business", "event"):
+        for key in ("event", "business"):
             tab = QPushButton(SECTION_TEXT[key]["tab_text"])
+            tab.setObjectName("tableTab")
             tab.setCheckable(True)
             tab.setProperty("sectionTab", True)
-            tab.setMinimumHeight(42)
+            tab.setMinimumHeight(40)
             tab.setCursor(Qt.CursorShape.PointingHandCursor)
             tab.setToolTip(SECTION_TEXT[key]["intro"])
             tab.clicked.connect(lambda _checked=False, target=key: self.set_mode(target))
             self.mode_buttons[key] = tab
-            section_bar.addWidget(tab)
-        section_bar.addStretch()
-        outer.addLayout(section_bar)
+            bar.addWidget(tab)
+        self.intro = QLabel()
+        self.intro.setStyleSheet(f"color: {COLORS['dim']}; font-size: 12px;")
+        bar.addWidget(self.intro, 1)
+        outer.addLayout(bar)
 
-        intro = QLabel(SECTION_TEXT["business"]["intro"])
-        self.intro = intro
-        intro.setWordWrap(True)
-        intro.setStyleSheet(f"color: {COLORS['muted']}; font-size: 15px;")
-        outer.addWidget(intro)
+        self.felt = FeltTable()
+        outer.addWidget(self.felt, 1)
 
-        main = QHBoxLayout()
-        self.main_layout = main
-        main.setSpacing(32)
-        left = QVBoxLayout()
-        self.input_layout = left
-        left.setSpacing(12)
-        prompt = QLabel(SECTION_TEXT["business"]["topic_prompt"])
-        self.topic_prompt = prompt
-        prompt.setFont(title_font(22))
-        left.addWidget(prompt)
+        slip_row = QHBoxLayout()
+        slip_row.setSpacing(10)
+        slip = QFrame()
+        slip.setObjectName("topicSlip")
+        slip_layout = QVBoxLayout(slip)
+        slip_layout.setContentsMargins(20, 10, 20, 8)
+        slip_layout.setSpacing(2)
+        self.topic_prompt = QLabel("这一桌聊什么")
+        self.topic_prompt.setStyleSheet(
+            f"color: {COLORS['gold']}; font-size: 10px; letter-spacing: 2px;"
+        )
+        slip_layout.addWidget(self.topic_prompt)
         self.topic = QLineEdit()
-        self.topic.setPlaceholderText(SECTION_TEXT["business"]["topic_placeholder"])
-        self.topic.setMinimumHeight(52)
-        left.addWidget(self.topic)
+        self.topic.setObjectName("topicSlipInput")
+        self.topic.setMinimumHeight(40)
+        slip_layout.addWidget(self.topic)
+        slip_row.addWidget(slip, 1)
+        self.example_button = QPushButton("换一个")
+        self.example_button.clicked.connect(
+            lambda: self.topic.setText(SECTION_TEXT[self.mode]["example_topic"])
+        )
+        slip_row.addWidget(self.example_button, 0, Qt.AlignmentFlag.AlignVCenter)
+        outer.addLayout(slip_row)
+
+        material = QHBoxLayout()
+        material.setSpacing(10)
+        self.material_label = QLabel("补充材料（可选）")
+        self.material_label.setStyleSheet(f"color: {COLORS['dim']}; font-size: 11px;")
+        material.addWidget(self.material_label)
         self.source = QTextEdit()
-        self.source.setPlaceholderText(SECTION_TEXT["business"]["source_placeholder"])
-        self.source.setFixedHeight(110)
-        left.addWidget(self.source)
-        self.rss_opt_in = QCheckBox("允许本次讨论获取 RSS 前沿信息")
-        self.rss_opt_in.setToolTip("开始讨论时获取公开新闻源的标题与摘要；关闭后本次不获取新闻。联网素材与桌上观点分开标记。")
+        self.source.setFixedHeight(46)
+        material.addWidget(self.source, 1)
+        self.rss_opt_in = QCheckBox("允许获取 RSS 前沿信息")
+        self.rss_opt_in.setToolTip(
+            "开始讨论时获取公开新闻源的标题与摘要；关闭后本次不获取新闻。联网素材与桌上观点分开标记。"
+        )
         self.rss_opt_in.setChecked(False)
         self.rss_opt_in.setEnabled(False)
-        left.addWidget(self.rss_opt_in)
-        self.network_note = QLabel()
-        self.network_note.setWordWrap(True)
-        self.network_note.setStyleSheet(f"color: {COLORS['dim']};")
-        left.addWidget(self.network_note)
         self.rss_opt_in.toggled.connect(self._update_network_badge)
-        self._refresh_network_option()
-        actions = QHBoxLayout()
-        actions.setSpacing(8)
+        material.addWidget(self.rss_opt_in)
+        outer.addLayout(material)
+
+        footer = QHBoxLayout()
+        footer.setSpacing(10)
+        self.deal_button = QPushButton("发 牌")
+        self.deal_button.setObjectName("dealButton")
+        self.deal_button.clicked.connect(self._deal)
+        footer.addWidget(self.deal_button)
         self.start_button = QPushButton(SECTION_TEXT["business"]["start_button"])
         self.start_button.setProperty("primary", True)
+        self.start_button.setMinimumHeight(46)
         self.start_button.clicked.connect(self._start)
-        actions.addWidget(self.start_button)
-        self.example_button = QPushButton("填入示例")
-        self.example_button.clicked.connect(lambda: self.topic.setText(SECTION_TEXT[self.mode]["example_topic"]))
-        actions.addWidget(self.example_button)
-        left.addLayout(actions)
-        secondary_actions = QHBoxLayout()
-        secondary_actions.setSpacing(8)
-        history = QPushButton("最近讨论")
-        history.clicked.connect(self.history_requested)
-        secondary_actions.addWidget(history)
-        hotspots = QPushButton("社会热点雷达")
-        hotspots.clicked.connect(self.hotspots_requested)
-        secondary_actions.addWidget(hotspots)
-        ai_settings = QPushButton("AI 设置")
-        ai_settings.clicked.connect(self.ai_settings_requested)
-        secondary_actions.addWidget(ai_settings)
-        secondary_actions.addStretch()
-        left.addLayout(secondary_actions)
-        left.addStretch()
+        footer.addWidget(self.start_button)
+        self.foot_note = QLabel("")
+        self.foot_note.setStyleSheet(f"color: {COLORS['dim']}; font-size: 11px;")
+        footer.addWidget(self.foot_note)
+        footer.addStretch(1)
+        outer.addLayout(footer)
 
-        right = QFrame()
-        self.role_panel = right
-        right.setObjectName("rolePanel")
-        right.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        right.setStyleSheet("QFrame#rolePanel { background: #16251f; border: 1px solid #334d40; border-radius: 18px; }")
-        role_layout = QVBoxLayout(right)
-        role_layout.setContentsMargins(20, 18, 20, 18)
-        role_header = QHBoxLayout()
-        role_header.setSpacing(6)
-        self.role_title = QLabel(SECTION_TEXT["business"]["role_title"])
-        self.role_title.setStyleSheet(f"color: {COLORS['muted']}; font-size: 13px;")
-        role_header.addWidget(self.role_title)
-        role_header.addStretch()
-        role_layout.addLayout(role_header)
-        self.role_stack = QStackedWidget()
-        for key, roster in ROLES_BY_MODE.items():
-            page = QWidget()
-            grid = QGridLayout(page)
-            grid.setContentsMargins(0, 0, 4, 0)
-            grid.setHorizontalSpacing(10)
-            grid.setVerticalSpacing(8)
-            chips: list[RoleChip] = []
-            for index, role in enumerate(roster):
-                chip = RoleChip(role)
-                chips.append(chip)
-                grid.addWidget(chip, index // 2, index % 2)
-            self._mode_chips[key] = chips
-            self._role_grids[key] = grid
-            self.role_stack.addWidget(page)
-        self._role_columns = 2
-        self.role_grid = self._role_grids["business"]
-        self.role_chips = self._mode_chips["business"]
-        role_scroll = QScrollArea()
-        role_scroll.setWidgetResizable(True)
-        role_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        role_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        role_scroll.setWidget(self.role_stack)
-        role_layout.addWidget(role_scroll, 1)
-        role_buttons = QHBoxLayout()
-        all_button = QPushButton("全选")
-        all_button.clicked.connect(lambda: [chip.setChecked(True) for chip in self.role_chips])
-        role_buttons.addWidget(all_button)
-        none_button = QPushButton("清空")
-        none_button.clicked.connect(lambda: [chip.setChecked(False) for chip in self.role_chips])
-        role_buttons.addWidget(none_button)
-        quick_button = QPushButton("四人快速")
-        quick_button.clicked.connect(self._quick)
-        role_buttons.addWidget(quick_button)
-        role_layout.addLayout(role_buttons)
-        right.setMinimumWidth(390)
-        main.addLayout(left, 5)
-        main.addWidget(right, 6)
-        outer.addLayout(main, 1)
+        self.network_note = QLabel()
+        self.network_note.setWordWrap(True)
+        self.network_note.setStyleSheet(f"color: {COLORS['dim']}; font-size: 11px;")
+        outer.addWidget(self.network_note)
 
-        note = QLabel(SECTION_TEXT["business"]["note"])
-        self.bottom_note = note
-        note.setWordWrap(True)
-        note.setStyleSheet(f"color: {COLORS['dim']};")
-        outer.addWidget(note)
+        self.bottom_note = QLabel(SECTION_TEXT["business"]["note"])
+        self.bottom_note.setWordWrap(True)
+        self.bottom_note.setStyleSheet(f"color: {COLORS['dim']}; font-size: 11px;")
+        outer.addWidget(self.bottom_note)
 
+        self._refresh_network_option()
+
+    # ── 牌桌 ────────────────────────────────────────────────────────
+    def _build_deck(self) -> None:
+        self._stop_animations()
+        for card in self._cards:
+            card.setParent(None)
+            card.deleteLater()
+        self._cards = []
+        self._dealt = False
+        self.deal_button.setText("发 牌")
+        roster = ROLES_BY_MODE[self.mode]
+        for index, role in enumerate(roster):
+            card = SeatCard(role, self.felt)
+            card.toggled.connect(self._on_card_toggled)
+            card.show()
+            self._cards.append(card)
+        self.role_chips = self._cards
+        self._mode_chips[self.mode] = self._cards
+        for card in self._cards:
+            card.setChecked(True)
+            card.set_down_style(False)
+        self._layout_cards(animate=False)
+        self._update_foot_note()
+
+    def _card_size(self, count: int) -> tuple[int, int]:
+        """按张数把牌缩放：九张牌也要在一张桌子上一字排开、互不压字。"""
+        gap = 12
+        avail = max(self.felt.width() * 0.94 - (count - 1) * gap, 260)
+        width = int(min(SeatCard.CARD_WIDTH, avail / count))
+        width = max(width, 88)
+        height = int(width * SeatCard.CARD_HEIGHT / SeatCard.CARD_WIDTH)
+        return width, height
+
+    def _stack_point(self, index: int, card_w: int, card_h: int) -> QPoint:
+        center_x = self.felt.width() // 2 - card_w // 2
+        center_y = self.felt.height() // 2 - card_h // 2
+        return QPoint(center_x + index * 3 - 10, center_y - index * 3 + 16)
+
+    def _fan_point(
+        self, index: int, count: int, *, card_w: int, card_h: int, down: bool
+    ) -> QPoint:
+        gap = 12
+        spread = (count - 1) * (card_w + gap)
+        left = self.felt.width() / 2 - spread / 2 + index * (card_w + gap)
+        position = 0.5 if count <= 1 else index / (count - 1)
+        arc = (1 - 4 * (position - 0.5) ** 2) * -20
+        top = self.felt.height() / 2 - card_h / 2 - 4 + arc
+        if down:
+            top += card_h * 0.34
+        return QPoint(int(left), int(top))
+
+    def _layout_cards(self, *, animate: bool) -> None:
+        if not self._cards:
+            return
+        count = len(self._cards)
+        card_w, card_h = self._card_size(count)
+        for card in self._cards:
+            if card.width() != card_w or card.height() != card_h:
+                card.setFixedSize(card_w, card_h)
+            card.apply_scale(card_w / SeatCard.CARD_WIDTH)
+        targets: list[QPoint] = []
+        for index, card in enumerate(self._cards):
+            card.set_face_down(not self._dealt)
+            target = (
+                self._fan_point(
+                    index, count, card_w=card_w, card_h=card_h, down=not card.isChecked()
+                )
+                if self._dealt
+                else self._stack_point(index, card_w, card_h)
+            )
+            targets.append(target)
+            card.raise_()
+        self._stop_animations()
+        if not animate:
+            for card, target in zip(self._cards, targets):
+                card.move(target)
+            return
+        for index, (card, target) in enumerate(zip(self._cards, targets)):
+            if card.pos() == target:
+                continue
+            move = QPropertyAnimation(card, b"pos", self)
+            move.setDuration(380)
+            move.setStartValue(card.pos())
+            move.setEndValue(target)
+            move.setEasingCurve(QEasingCurve.Type.OutCubic)
+            group = QSequentialAnimationGroup(self)
+            if index:
+                group.addPause(index * 42)
+            group.addAnimation(move)
+            group.start()
+            self._animations.append(group)
+
+    def _stop_animations(self) -> None:
+        for animation in self._animations:
+            animation.stop()
+            animation.deleteLater()
+        self._animations = []
+
+    def _deal(self) -> None:
+        if self._dealt:
+            for card in self._cards:
+                card.blockSignals(True)
+                card.setChecked(True)
+                card.blockSignals(False)
+                card.set_down_style(False)
+            self._dealt = False
+            self.deal_button.setText("发 牌")
+            self._layout_cards(animate=True)
+            self._update_foot_note()
+            return
+        self._dealt = True
+        self.deal_button.setText("重新发牌")
+        self._layout_cards(animate=True)
+        self._update_foot_note()
+
+    def _on_card_toggled(self, checked: bool) -> None:
+        card = self.sender()
+        if not isinstance(card, SeatCard):
+            return
+        if not checked and sum(1 for item in self._cards if item.isChecked()) < 2:
+            card.blockSignals(True)
+            card.setChecked(True)
+            card.blockSignals(False)
+            card.set_down_style(False)
+            self.foot_note.setText("至少留两个人，不然没人说话。")
+            return
+        card.set_down_style(not checked)
+        if not self._dealt:
+            # 没发牌就按：先把牌摊开，否则用户看不出这张牌去哪了
+            self._dealt = True
+            self.deal_button.setText("重新发牌")
+        self._layout_cards(animate=True)
+        self._update_foot_note()
+
+    def _update_foot_note(self) -> None:
+        on_table = sum(1 for card in self._cards if card.isChecked())
+        if self._dealt:
+            self.foot_note.setText(
+                f"桌上 {on_table} 张 · 按下去 {len(self._cards) - on_table} 张"
+            )
+        else:
+            self.foot_note.setText(f"牌堆 {len(self._cards)} 张")
+
+    # ── 其它 ────────────────────────────────────────────────────────
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
-        compact = self.height() < 700 or self.width() < 1100
+        compact = self.height() < 720 or self.width() < 1180
         self._compact = compact
-        self.layout().setContentsMargins(*( (24, 16, 24, 20) if compact else (70, 46, 70, 54) ))
-        self.layout().setSpacing(12 if compact else 22)
-        self.main_layout.setSpacing(18 if compact else 32)
-        self.input_layout.setSpacing(8 if compact else 12)
-        self.product_title.setFont(title_font(28 if compact else 40))
-        self.topic_prompt.setFont(title_font(18 if compact else 22))
-        self._update_network_badge()
-        self.network_note.setVisible(self.height() >= 580)
-        self.topic.setMinimumHeight(44 if compact else 52)
-        self.source.setFixedHeight(64 if self.height() < 550 else (78 if compact else 110))
-        columns = 1 if self.width() < 900 else 2
-        if columns != self._role_columns:
-            self._role_columns = columns
-            self._relayout_chips()
-        self.role_panel.setMinimumWidth(250 if columns == 1 else 390)
-        for chip in self.role_chips:
-            chip.setMinimumHeight(64 if compact else 72)
+        self.layout().setContentsMargins(*((26, 14, 26, 14) if compact else (48, 26, 48, 22)))
+        self.layout().setSpacing(10 if compact else 14)
+        self.product_title.setFont(title_font(21 if compact else 26))
+        self.tagline.setVisible(self.width() >= 1180)
+        self.intro.setVisible(self.width() >= 1080)
+        self.material_label.setVisible(self.width() >= 1000)
+        self.source.setFixedHeight(38 if compact else 46)
+        self.network_note.setVisible(self.height() >= 700)
+        self.bottom_note.setVisible(self.height() >= 660)
+        self._layout_cards(animate=False)
         self.updateGeometry()
 
     def minimumSizeHint(self) -> QSize:
-        return QSize(640, 400)
+        return QSize(720, 480)
 
     def _refresh_network_option(self) -> None:
         config = AppConfig.from_environment()
-        enabled = config.mode != "offline" and config.allow_network and config.news_enabled and bool(config.news_feed_urls)
+        enabled = (
+            config.mode != "offline"
+            and config.allow_network
+            and config.news_enabled
+            and bool(config.news_feed_urls)
+        )
         self.rss_opt_in.setEnabled(enabled)
         self.rss_opt_in.setChecked(enabled)
         if enabled:
-            model_note = "已启用 OpenAI 兼容模型" if config.llm_provider == "openai" and config.allow_llm and config.llm_api_key else "真实模型需单独配置"
+            model_note = (
+                "已启用 OpenAI 兼容模型"
+                if config.llm_provider == "openai" and config.allow_llm and config.llm_api_key
+                else "真实模型需单独配置"
+            )
             self.network_note.setText(f"开始时获取国内新闻源的相关素材，按发布时间排序。{model_note}。")
         elif config.mode == "offline":
             self.network_note.setText("当前已设置强制离线，新闻和模型均不会联网。")
@@ -354,7 +673,11 @@ class LobbyPage(QWidget):
         self._update_network_badge()
 
     def _update_network_badge(self, _checked: bool = False) -> None:
-        text = "联网素材可用 · 观点待核验" if self.rss_opt_in.isEnabled() and self.rss_opt_in.isChecked() else "本次不获取新闻 · 观点待核验"
+        text = (
+            "联网素材可用 · 观点待核验"
+            if self.rss_opt_in.isEnabled() and self.rss_opt_in.isChecked()
+            else "本次不获取新闻 · 观点待核验"
+        )
         self.source_badge.setText(text)
         self.source_badge.setToolTip(text + "；获取新闻与真实模型讨论是两项独立能力。")
 
@@ -364,38 +687,31 @@ class LobbyPage(QWidget):
             if self.mode == "business"
             else {"qian", "li", "kan", "dui"}
         )
-        for chip in self.role_chips:
-            chip.setChecked(chip.role.id in selected)
-
-    def _relayout_chips(self) -> None:
-        columns = self._role_columns
-        for index, chip in enumerate(self.role_chips):
-            self.role_grid.removeWidget(chip)
-            self.role_grid.addWidget(chip, index // columns, index % columns)
+        for card in self._cards:
+            card.setChecked(card.role.id in selected)
+            card.set_down_style(card.role.id not in selected)
+        self._layout_cards(animate=True)
+        self._update_foot_note()
 
     def set_mode(self, mode: str) -> None:
-        """Switch the lobby between the business section and the event section."""
+        """Switch the lobby between the business table and the gossip table."""
         if mode not in ROLES_BY_MODE:
             mode = "business"
         self.mode = mode
         text = SECTION_TEXT[mode]
-        self.role_stack.setCurrentIndex(list(ROLES_BY_MODE).index(mode))
-        self.role_grid = self._role_grids[mode]
-        self.role_chips = self._mode_chips[mode]
         for key, button in self.mode_buttons.items():
             button.setChecked(key == mode)
-        self.role_title.setText(text["role_title"])
         self.intro.setText(text["intro"])
         self.topic_prompt.setText(text["topic_prompt"])
         self.topic.setPlaceholderText(text["topic_placeholder"])
         self.source.setPlaceholderText(text["source_placeholder"])
         self.bottom_note.setText(text["note"])
         self.start_button.setText(text["start_button"])
-        self._relayout_chips()
+        self._build_deck()
         self.updateGeometry()
 
     def selected_roles(self) -> list[Role]:
-        return [chip.role for chip in self.role_chips if chip.isChecked()]
+        return [card.role for card in self._cards if card.isChecked()]
 
     def _start(self) -> None:
         roles = self.selected_roles()

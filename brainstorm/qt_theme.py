@@ -39,6 +39,25 @@ def app_stylesheet() -> str:
     QPushButton#roleChip {{ background: #102019; border: 1px solid #2d4437; border-radius: 12px; padding: 0; text-align: left; }}
     QPushButton#roleChip:checked {{ background: #20372c; border-color: #827449; }}
     QPushButton#roleChip:hover {{ background: #284237; border-color: {c['gold']}; }}
+    /* 座位牌：一张米色纸牌摊在绒面上，按下去（不上桌）就变暗 */
+    QPushButton#seatCard {{
+        background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #fbf5e6, stop:1 #ece0c7);
+        border: 1px solid #c8b48a;
+        border-radius: 10px;
+        padding: 0;
+        text-align: center;
+    }}
+    QPushButton#seatCard:hover {{ border-color: {c['gold_bright']}; background: #fffdf5; }}
+    QPushButton#seatCard[down="true"] {{
+        background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #3d3a31, stop:1 #26241d);
+        border: 1px dashed #574f3d;
+    }}
+    QPushButton#seatCard[down="true"]:hover {{ border-color: #8a7b58; }}
+    QPushButton#dealButton {{ background: #17281f; border: 1px solid #6b6a4a; color: {c['gold_bright']}; padding: 12px 24px; letter-spacing: 4px; }}
+    QPushButton#dealButton:hover {{ border-color: {c['gold']}; background: #1e3327; }}
+    QFrame#topicSlip {{ background: #141f1a; border: 1px solid #3a5145; border-radius: 12px; }}
+    QFrame#topicSlip QLineEdit#topicSlipInput {{ background: transparent; border: 0; border-bottom: 1px solid #3f5a4b; border-radius: 0; padding: 2px 0 6px 0; font-family: 'Songti SC', 'SimSun', serif; font-size: 20px; }}
+    QFrame#topicSlip QLineEdit#topicSlipInput:focus {{ border-bottom: 1px solid {c['gold']}; }}
     QPushButton[sectionTab="true"] {{ background: #102019; color: {c['muted']}; border: 1px solid #2d4437; border-radius: 14px; padding: 10px 20px; font-size: 14px; text-align: left; }}
     QPushButton[sectionTab="true"]:hover {{ border-color: {c['gold']}; color: {c['cream']}; }}
     QPushButton[sectionTab="true"]:checked {{ background: {c['gold']}; color: {c['ink']}; border-color: {c['gold_bright']}; font-weight: 700; }}
