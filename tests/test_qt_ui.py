@@ -565,5 +565,32 @@ class QtUiTests(unittest.TestCase):
         self.assertFalse(page.section_label.isVisibleTo(page))
 
 
+    def test_window_mode_cycles_and_never_minimizes(self):
+        window = MainWindow()
+        window.showFullScreen()
+        sizes = []
+        for _ in range(3):
+            window._toggle_window_mode()
+            sizes.append(window.isFullScreen())
+        self.assertEqual(sizes, [False, False, True])
+        self.assertFalse(window.isMinimized())
+
+    def test_space_is_not_eaten_by_action_buttons(self):
+        from brainstorm.qt_app import ActionButton
+
+        button = ActionButton("测试", kind="dot")
+        fired = []
+        button.clicked.connect(lambda: fired.append(1))
+        from PySide6.QtGui import QKeyEvent
+        from PySide6.QtCore import QEvent, Qt
+
+        space = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Space, Qt.KeyboardModifier.NoModifier)
+        button.keyPressEvent(space)
+        self.assertEqual(fired, [])
+        enter = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Return, Qt.KeyboardModifier.NoModifier)
+        button.keyPressEvent(enter)
+        self.assertEqual(fired, [1])
+
+
 if __name__ == "__main__":
     unittest.main()

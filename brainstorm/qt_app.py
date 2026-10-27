@@ -45,8 +45,10 @@ from PySide6.QtWidgets import (
     QLabel,
     QListWidget,
     QListWidgetItem,
+    QLineEdit,
     QMainWindow,
     QMessageBox,
+    QPlainTextEdit,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -302,7 +304,8 @@ class ActionButton(QPushButton):
         super().mouseReleaseEvent(event)
 
     def keyPressEvent(self, event) -> None:  # noqa: N802
-        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space):
+        # 只认回车。空格是「下一条」，不能被按钮抢走
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
             self.clicked.emit()
             return
         super().keyPressEvent(event)
@@ -743,7 +746,7 @@ class LobbyPage(QWidget):
         self.window_button = ActionButton("窗口化", kind="frame", hint="Esc")
         self.window_button.clicked.connect(self.window_mode_requested)
         header.addWidget(self.window_button)
-        self.exit_button = ActionButton("退出", kind="power", hint="Esc")
+        self.exit_button = ActionButton("退出", kind="power")
         self.exit_button.clicked.connect(self.exit_requested)
         header.addWidget(self.exit_button)
         outer.addLayout(header)
@@ -1863,11 +1866,40 @@ class MainWindow(QMainWindow):
         self.controller.save()
         self.stack.setCurrentWidget(self.lobby)
 
+    # 窗口三档：全屏 → 大窗 → 小窗 → 全屏。走到最小再点一次就回全屏
+    _WINDOW_STEPS = ((1280, 800), (960, 620))
+
     def _toggle_window_mode(self) -> None:
+        # 全屏 → 大窗 → 小窗 → 全屏。每点一次一定往前走一档，
+        # 不会停在「最小化」那种什么也没发生的状态
+        step = getattr(self, "_window_step", 0)
         if self.isFullScreen():
+            step = 1
             self.showNormal()
+            self._place_window(*self._WINDOW_STEPS[0])
+        elif step < 2:
+            step += 1
+            self._place_window(*self._WINDOW_STEPS[step - 1])
         else:
+            step = 0
             self.showFullScreen()
+        self._window_step = step
+
+    def _place_window(self, width: int, height: int) -> None:
+        screen = self.screen() or QApplication.primaryScreen()
+        if screen is None:
+            self.setGeometry(0, 0, width, height)
+            return
+        area = screen.availableGeometry()
+        size = QSize(min(width, area.width()), min(height, area.height()))
+        self.setGeometry(
+            area.x() + (area.width() - size.width()) // 2,
+            area.y() + (area.height() - size.height()) // 2,
+            size.width(),
+            size.height(),
+        )
+        self.raise_()
+        self.activateWindow()
 
     def closeEvent(self, event) -> None:
         if not hasattr(self, "controller"):
@@ -1881,13 +1913,25 @@ class MainWindow(QMainWindow):
         event.accept()
 
     def keyPressEvent(self, event) -> None:
+        # Esc = 缩小一档（全屏→大窗→小窗→全屏），永远不会把程序关掉
         if event.key() == Qt.Key.Key_Escape:
-            if self.isFullScreen():
-                self.showNormal()
-            else:
-                self.close()
+            self._toggle_window_mode()
             return
+        # 空格 = 讨论里走下一条（正在输入框里打字时不抢）
+        if (
+            event.key() == Qt.Key.Key_Space
+            and self.stack.currentWidget() is self.roundtable
+            and not self._typing_focus()
+        ):
+            if self.roundtable.next_button.isEnabled():
+                self.controller.next_step()
+                return
         super().keyPressEvent(event)
+
+    @staticmethod
+    def _typing_focus() -> bool:
+        widget = QApplication.focusWidget()
+        return isinstance(widget, (QLineEdit, QTextEdit, QPlainTextEdit))
 
 
 def run() -> int:
