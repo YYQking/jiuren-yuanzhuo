@@ -97,6 +97,16 @@ def render(markdown: str) -> str:
         if line.startswith("---"):
             flush_paragraph()
             continue
+        ordered = re.match(r"^(\s*)(\d+)[.、)]\s+(.*)$", line)
+        if ordered:
+            flush_paragraph()
+            depth = len(ordered.group(1)) // 2
+            prefix = "  " * depth
+            head = f"{ordered.group(2)}. "
+            wrapped = _wrap(_inline(ordered.group(3)), WRAP - len(prefix) - len(head))
+            blocks.append(prefix + head + wrapped[0])
+            blocks.extend(prefix + " " * len(head) + extra for extra in wrapped[1:])
+            continue
         bullet = re.match(r"^(\s*)[-*]\s+(.*)$", line)
         if bullet:
             flush_paragraph()

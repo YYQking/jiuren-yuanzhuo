@@ -31,9 +31,16 @@ function Get-Hash16([string]$Path) {
 # 1. 打包
 if (-not $SkipBuild) {
     Write-Output '打包中…'
+    # PyInstaller 会往 stderr 写 INFO 日志；在 Stop 模式下这会被当成终止错误，
+    # 所以这一段临时放宽，只认它真正的退出码。
+    $strict = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
     & $py -m PyInstaller (Join-Path $root '九人圆桌-Qt.spec') --noconfirm `
-        --distpath (Join-Path $root 'dist-qt') --workpath (Join-Path $root 'build-qt') *> (Join-Path $root 'artifacts\build-qt.log')
-    if ($LASTEXITCODE -ne 0) { throw "PyInstaller 失败，见 artifacts\build-qt.log" }
+        --distpath (Join-Path $root 'dist-qt') --workpath (Join-Path $root 'build-qt') 2>&1 |
+        Out-File -FilePath (Join-Path $root 'artifacts\build-qt.log') -Encoding utf8
+    $buildCode = $LASTEXITCODE
+    $ErrorActionPreference = $strict
+    if ($buildCode -ne 0) { throw "PyInstaller 失败，见 artifacts\build-qt.log" }
     $work = Join-Path $root 'build-qt'
     if (Test-Path -LiteralPath $work) { Remove-Item -LiteralPath $work -Recurse -Force }
 }

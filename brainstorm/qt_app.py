@@ -13,6 +13,7 @@ from PySide6.QtCore import (
     QRectF,
     QSequentialAnimationGroup,
     QSize,
+    QTimer,
     Qt,
     Signal,
 )
@@ -162,7 +163,7 @@ class FeltTable(QWidget):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setMinimumHeight(280)
+        self.setMinimumHeight(170)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
     def paintEvent(self, event) -> None:
@@ -346,6 +347,9 @@ class LobbyPage(QWidget):
         self._animations: list[QSequentialAnimationGroup] = []
         self._dealt = False
         self._compact = False
+        self._pending_layout = QTimer(self)
+        self._pending_layout.setSingleShot(True)
+        self._pending_layout.timeout.connect(lambda: self._layout_cards(animate=False))
         self._build()
         self.set_mode("business")
 
@@ -372,15 +376,15 @@ class LobbyPage(QWidget):
             " border: 1px solid #40584a; border-radius: 12px; font-size: 11px;"
         )
         header.addWidget(self.source_badge)
-        history = QPushButton("最近讨论")
-        history.clicked.connect(self.history_requested)
-        header.addWidget(history)
-        hotspots = QPushButton("社会热点雷达")
-        hotspots.clicked.connect(self.hotspots_requested)
-        header.addWidget(hotspots)
-        ai_settings = QPushButton("AI 设置")
-        ai_settings.clicked.connect(self.ai_settings_requested)
-        header.addWidget(ai_settings)
+        self.history_button = QPushButton("最近讨论")
+        self.history_button.clicked.connect(self.history_requested)
+        header.addWidget(self.history_button)
+        self.hotspots_button = QPushButton("社会热点雷达")
+        self.hotspots_button.clicked.connect(self.hotspots_requested)
+        header.addWidget(self.hotspots_button)
+        self.ai_settings_button = QPushButton("AI 设置")
+        self.ai_settings_button.clicked.connect(self.ai_settings_requested)
+        header.addWidget(self.ai_settings_button)
         self.window_button = QPushButton("窗口化")
         self.window_button.clicked.connect(self.window_mode_requested)
         header.addWidget(self.window_button)
@@ -509,9 +513,12 @@ class LobbyPage(QWidget):
     def _card_size(self, count: int) -> tuple[int, int]:
         """按张数把牌缩放：九张牌也要在一张桌子上一字排开、互不压字。"""
         gap = 12
-        avail = max(self.felt.width() * 0.94 - (count - 1) * gap, 260)
+        avail = max(self.felt.width() * 0.86 - (count - 1) * gap, 260)
         width = int(min(SeatCard.CARD_WIDTH, avail / count))
         width = max(width, 88)
+        # 桌子本身矮的时候（小屏幕），牌也不能高过台面
+        max_height = max(self.felt.height() * 0.80, 96)
+        width = min(width, int(max_height * SeatCard.CARD_WIDTH / SeatCard.CARD_HEIGHT))
         height = int(width * SeatCard.CARD_HEIGHT / SeatCard.CARD_WIDTH)
         return width, height
 
@@ -629,17 +636,24 @@ class LobbyPage(QWidget):
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         compact = self.height() < 720 or self.width() < 1180
+        narrow = self.width() < 1260
         self._compact = compact
         self.layout().setContentsMargins(*((26, 14, 26, 14) if compact else (48, 26, 48, 22)))
         self.layout().setSpacing(10 if compact else 14)
         self.product_title.setFont(title_font(21 if compact else 26))
-        self.tagline.setVisible(self.width() >= 1180)
-        self.intro.setVisible(self.width() >= 1080)
-        self.material_label.setVisible(self.width() >= 1000)
-        self.source.setFixedHeight(38 if compact else 46)
+        # 窗口窄的时候，先把不必要的东西让出去，别把按钮挤出屏幕
+        self.tagline.setVisible(self.width() >= 1420)
+        self.intro.setVisible(self.width() >= 1180)
+        self.source_badge.setVisible(self.width() >= 1120)
+        self.material_label.setVisible(self.width() >= 1040)
+        self.history_button.setText("历史" if narrow else "最近讨论")
+        self.hotspots_button.setText("热点" if narrow else "社会热点雷达")
+        self.source.setFixedHeight(34 if compact else 46)
+        self.topic.setMinimumHeight(32 if compact else 40)
         self.network_note.setVisible(self.height() >= 700)
         self.bottom_note.setVisible(self.height() >= 660)
         self._layout_cards(animate=False)
+        self._pending_layout.start(0)
         self.updateGeometry()
 
     def minimumSizeHint(self) -> QSize:
