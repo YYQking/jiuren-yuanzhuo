@@ -80,7 +80,7 @@ def role_tooltip(role: Role) -> str:
     if not yang or not yin:
         return role.duty
     trigram = getattr(role, "trigram", "")
-    return f"{trigram} · {role.name}\n阳面：{yang}\n阴面：{yin}\n\n{role.duty}"
+    return f"{role.name}（{trigram}）\n阳面：{yang}\n阴面：{yin}\n\n{role.duty}"
 
 
 class RoleChip(QPushButton):

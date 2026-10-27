@@ -156,7 +156,7 @@ class MockDiscussionProvider:
                 role.id,
                 (ViewpointKind.ASSUMPTION, "对“{topic}”这事，我知道的不多，只能说说听来的那部分。"),
             )
-            self._add(session, role.id, role.name, text.format(topic=topic), kind, "各自开口")
+            self._add_face(session, role.id, role.name, text.format(topic=topic), kind, "各自开口", "yang")
         by_id = {role.id: role for role in selected}
         # Half these exchanges land on a seat's 阳面 and half on its 阴面, so the
         # offline demo shows both sides of the eight tempers instead of a room

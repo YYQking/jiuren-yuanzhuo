@@ -550,13 +550,13 @@ class QtUiTests(unittest.TestCase):
             selected_role_ids=[role.id for role in EVENT_ROLES],
             mode="event",
         )
-        session.append_utterance(Utterance("qian", "天哥", "这事得先定规矩", ViewpointKind.FACT, "独立观点",
+        session.append_utterance(Utterance("qian", "乾明", "这事得先定规矩", ViewpointKind.FACT, "独立观点",
                                            origin="model", face="yang"))
         self.controller.load(session)
         page._utterance(session.utterances[0], 0, 1)
         self.assertEqual(page.section_label.text(), "八卦桌 · 事件讨论")
         self.assertTrue(page.section_label.isVisibleTo(page))
-        self.assertIn("天哥 · 阳面", page.transcript.toPlainText())
+        self.assertIn("乾明 · 阳面", page.transcript.toPlainText())
 
     def test_business_roundtable_hides_the_event_badge(self):
         page = RoundtablePage(self.controller)

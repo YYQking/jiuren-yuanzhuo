@@ -112,13 +112,32 @@
 已做的四处改动（均在 `brainstorm/qt_app.py`）：
 
 - 分区切换从"角色面板右上角两个小按钮"改为标题下两个大按钮：「商业痛点 → 机会档案」「事件讨论 → 吃瓜纪要」，当前项金色高亮（`LobbyPage.mode_buttons`）。
-- 事件席位卡显示卦名与两面的样子：「乾·天 · 定调子、拍板的人」；`toolTip` 里有阳面/阴面两行（`_role_chip` 里的 `face_tip`）。
-- 转写正文里每条发言带面别标签：「天哥 · 阳面　事实（已经确认的）　回应 地姐」；`_speaker_tag()` 只在 `utterance.face` 非空时追加。
+- 事件席位卡显示卦名与两面的样子：卡上大字是名字「乾明」，副标题是「乾·天 · 定调子、拍板的人」；`toolTip` 是「乾明（乾·天）\n阳面：…\n阴面：…」（`role_tooltip`）。
+- 转写正文里每条发言带面别标签：「乾明 · 阳面　事实（已经确认的）　回应 坤兰」；`_speaker_tag()` 只在 `utterance.face` 非空时追加。
 - 桌面页左上角徽标「八卦桌 · 事件讨论」（金色小字 `self.section_label`），商业模式隐藏；`_session_ready`/`load_session` 按 `session.mode` 显示。
 
 回归测试：`tests/test_qt_ui.py::QtUiTests.test_event_seat_shows_trigram_and_both_faces`、`test_event_roundtable_says_which_table_you_are_at`、`test_business_roundtable_hides_the_event_badge`（断言用 `isVisibleTo(page)`，整页未 show 时 `isVisible()` 恒为 False）。
 
 注意：`RoundtablePage` 的圆桌席位由 `set_selected_roles()` 决定，`controller.load()` **不会**改它；从大厅进入真实流程时 `MainWindow._start` 先调 `set_selected_roles` 再 `controller.start`，所以正确。自己写预览脚本时若只调 `controller.load()`，画面会留九个商业席位——那是脚本问题，不是产品缺陷。
+
+### 7.0.1 八个事件席位改名为「卦名当姓」（2026-10-27）
+
+用户："现在来改改名字，八卦的名字太傻逼了"，从三个方案里选了 **A：卦名当姓**。旧名（天哥/地姐/雷子/风姐/水哥/火姐/山哥/泽妹）已全部替换，源码、测试、说明书里 **零残留**：
+
+| 卦 | 新名 | 卦 | 新名 |
+| --- | --- | --- | --- |
+| 乾·天 | 乾明 | 坎·水 | 坎川 |
+| 坤·地 | 坤兰 | 离·火 | 离霞 |
+| 震·雷 | 震山 | 艮·山 | 艮石 |
+| 巽·风 | 巽竹 | 兑·泽 | 兑溪 |
+
+- 名字 = 卦名 + 一个字（明/兰/山/竹/川/霞/石/溪），八个互不相同，且一眼看出对应哪一卦；`role_id`（qian…dui）不变，存档与测试不受影响。
+- 席位卡：大字是新名「乾明」，副标题仍是「乾·天 · 定调子、拍板的人」；`role_tooltip` 改为「乾明（乾·天）\n阳面：…\n阴面：…」，避免「乾·天 · 乾明」重复。
+- 转写标签变成「乾明 · 阳面　…」；`tests/test_qt_ui.py:553/559` 已同步。
+- 顺带修一处不一致：离线模式八人开场原来没有面别（转写里前八条无「阳面」标签），现在 `engine.py:159` 走 `_add_face(..., "yang")`，与真实模型「阳面开场」一致。证据 `artifacts/probe_names.txt`（主持人无面、八人全阳面、第二段起出现阴面）。
+- 历史跑测 `artifacts/real-event-3` 里的旧名字**故意不改**：那是当时的原始记录，改了就是伪造证据。
+- 验证：266 测试全绿；桌面两份已用 `tools/deploy.ps1 -SkipBuild` 同时刷新（exe 哈希 `37096C05D5ACBB0C`，说明书 17740 字节带 BOM，分享 zip 186 条目/45.2MB），打包版窗口能正常开（1536×864「九人圆桌」）。
+
 
 ### 7.1 阴阳面的翻面必须由程序决定（2026-10-26，事件分区）
 
@@ -131,6 +150,8 @@
 同批修复：主持人不再带面（`llm.py` 解析处 `spec.speaker_id != "moderator"` 才给 face）；真实跑测第 13/20 条主持人曾被标成阴/阳面。
 
 证据：`artifacts/real-event-3` 共 20 条发言—10 条阳面、7 条阴面、3 条主持人无面；天哥第 10 条由阳转阴、地姐第 11 条转阴、第 15 条转回阳。回归测试 `tests/test_event_section.py::FaceFlipTests` 三条（先红后绿）与 `test_offline_event_discussion_keeps_both_faces_in_play`。
+
+（`real-event-3` 是 2026-10-26 的原始记录，里面仍是当时的旧名字「天哥/地姐」；2026-10-27 席位改名为乾明/坤兰/震山/巽竹/坎川/离霞/艮石/兑溪。翻面证据本身不受改名影响，不要为了统一名字去改历史跑测文件。）
 
 ### 7.2 发言气泡出现内部 JSON，且未看完就自动换下一条
 
