@@ -5,28 +5,31 @@ import re
 from dataclasses import dataclass
 from typing import Protocol
 
-from .models import DiscussionSession, OpportunityCard, Participation, Role, StanceChange, TrendSource, Utterance, ViewpointKind
+from .models import DiscussionSession, OpportunityCard, Participation, Reaction, Role, StanceChange, TrendSource, Utterance, ViewpointKind
+from .mood import resolve_face
 from .roles import mode_for_roles
 
 
-# The event section lets a seat flip between its 阳面 and 阴面, but not on every
-# turn -- otherwise the flip stops meaning anything.
-FACE_COOLDOWN = 3
-
-
 def _face_after(history: Sequence[Utterance], speaker_id: str) -> str:
-    """The face a seat should show next in an offline event discussion.
+    """The face a seat shows next in an offline event discussion.
 
-    A seat opens on its 阳面, then alternates, but only once ``FACE_COOLDOWN``
-    utterances have passed since its previous turn.
+    Same rule as the live model: the side follows the temper ledger, so a seat
+    only turns sour after something in the transcript actually landed on it.
     """
-    indices = [index for index, item in enumerate(history) if item.speaker_id == speaker_id]
-    if not indices:
-        return "yang"
-    if len(history) - 1 - indices[-1] < FACE_COOLDOWN:
-        return history[indices[-1]].face or "yang"
-    return "yin" if (history[indices[-1]].face or "yang") == "yang" else "yang"
+    return resolve_face(history, speaker_id)
 
+
+
+# How a purely offline discussion keeps tempers moving: every few turns one
+# sentence lands on the next speaker.  ``None`` means "this one landed softly".
+_EXTEND_NOTES: tuple[tuple[int, str] | None, ...] = (
+    None,
+    (-1, "他刚才那句顶到你了"),
+    None,
+    (1, "他替你把话接过去了，你觉得还行"),
+    None,
+    (-1, "他一直在打断你，你烦了"),
+)
 
 
 class DiscussionProvider(Protocol):
@@ -158,26 +161,35 @@ class MockDiscussionProvider:
             )
             self._add_face(session, role.id, role.name, text.format(topic=topic), kind, "各自开口", "yang")
         by_id = {role.id: role for role in selected}
-        # Half these exchanges land on a seat's 阳面 and half on its 阴面, so the
-        # offline demo shows both sides of the eight tempers instead of a room
-        # full of people already at their worst.
-        exchanges = [
-            ("kun", ViewpointKind.ASSUMPTION, "yang", "我说句软话：不管最后怎么说，现在就有人吃不下睡不着。先把人顾住，再论对错。", None),
-            ("qian", ViewpointKind.SUMMARY, "yang", "我拍个板：在有人拿出第二份说法之前，谁也别替当事人定性。传出去就说是桌上瞎聊的。", "kun"),
-            ("gen", ViewpointKind.VALIDATION, "yang", "我就一句：没核实的事别往外传。你们吵归吵，这条别破。", "qian"),
-            ("zhen", ViewpointKind.RISK, "yin", "我刚听说一版特别难听的，越听越来气——当然我没证实，谁证实了跟我说一声。", "gen"),
-            ("kan", ViewpointKind.RISK, "yin", "你要我说，最坏的那种可能还没人提。真走到那一步，今天在这儿替人说话的一个都跑不掉。", "zhen"),
-            ("li", ViewpointKind.RISK, "yin", "刚才是谁说我想多了？行，那我就不客气了。", "kan"),
-            ("dui", ViewpointKind.ASSUMPTION, "yin", "我补一句：传得最快的那版，恰恰是没人核过的那版。", "li"),
+        # Each entry is (seat, kind, words, reply_to, note).  The note records who
+        # *this* sentence landed on, so the next speaker walks in already annoyed
+        # -- the offline demo has to show the ledger working, not just four
+        # characters labelled 阴面.
+        exchanges: list[tuple[str, ViewpointKind, str, str | None, tuple[str, int, str] | None]] = [
+            ("kun", ViewpointKind.ASSUMPTION, "我说句软话：不管最后怎么说，现在就有人吃不下睡不着。先把人顾住，再论对错。", None, None),
+            ("qian", ViewpointKind.SUMMARY, "我拍个板：在有人拿出第二份说法之前，谁也别替当事人定性。传出去就说是桌上瞎聊的。", "kun",
+             ("zhen", -1, "他一句“谁也别替当事人定性”，你听着像在压着人不让说")),
+            ("gen", ViewpointKind.VALIDATION, "我就一句：没核实的事别往外传。你们吵归吵，这条别破。", "qian",
+             ("dui", -1, "他张口就是“别往外传”，你觉得这人真没劲")),
+            ("zhen", ViewpointKind.RISK, "我刚听说一版特别难听的，越听越来气——当然我没证实，谁证实了跟我说一声。", "gen",
+             ("kan", -1, "他专挑最坏那种可能说，你听着像在拿没影的事吓人")),
+            ("kan", ViewpointKind.RISK, "你要我说，最坏的那种可能还没人提。真走到那一步，今天在这儿替人说话的一个都跑不掉。", "zhen",
+             ("li", -1, "他说替人说话的“一个都跑不掉”，你听着像在怪你")),
+            ("li", ViewpointKind.RISK, "刚才是谁说我想多了？行，那我就不客气了。", "kan",
+             ("kun", -1, "她翻脸那一下，你觉得这张桌要炸")),
+            ("dui", ViewpointKind.ASSUMPTION, "我补一句：传得最快的那版，恰恰是没人核过的那版。", "li",
+             ("gen", -1, "他把这事当段子讲，你最听不得有人不拿它当回事")),
         ]
         recent_reply = ""
-        for seat, kind, face, text, reply_to in exchanges:
+        for seat, kind, text, reply_to, note in exchanges:
             role = by_id.get(seat)
             if role is None:
                 continue
+            face = _face_after(session.utterances, seat)
+            reactions = (Reaction(*note),) if note else ()
             added = self._add_face(
                 session, role.id, role.name, text, kind, "各说各话", face,
-                reply_to or recent_reply or None,
+                reply_to or recent_reply or None, reactions,
             )
             recent_reply = added.event_id
         self._add(
@@ -224,9 +236,16 @@ class MockDiscussionProvider:
         for offset, (speaker_id, speaker_name) in enumerate(seats):
             kind, phase, text = pool[(offset + index) % len(pool)]
             face = _face_after(session.utterances, speaker_id)
+            # Every few turns one sentence lands on the next speaker, so a purely
+            # offline discussion still shows tempers drifting.
+            drift = _EXTEND_NOTES[(offset + index) % len(_EXTEND_NOTES)]
+            reactions: tuple[Reaction, ...] = ()
+            if drift is not None:
+                target = seats[(offset + 1) % len(seats)][0]
+                reactions = (Reaction(target, drift[0], drift[1]),)
             item = self._add_face(
                 session, speaker_id, speaker_name, text, kind, phase, face,
-                previous_id or None,
+                previous_id or None, reactions,
             )
             previous_id = item.event_id
             added.append(item)
@@ -411,9 +430,11 @@ class MockDiscussionProvider:
 
     @classmethod
     def _add_face(cls, session: DiscussionSession, speaker_id: str, speaker_name: str, content: str,
-                  kind: ViewpointKind, phase: str, face: str, replies_to: str | None = None) -> Utterance:
+                  kind: ViewpointKind, phase: str, face: str, replies_to: str | None = None,
+                  reactions: tuple[Reaction, ...] = ()) -> Utterance:
         """An offline event turn, carrying the face it was spoken in."""
         return session.append_utterance(Utterance(
             speaker_id, speaker_name, content, kind, phase, replies_to,
             origin="offline", face=face, intent=cls._EVENT_INTENT.get(kind, "elaborate"),
+            reactions=reactions,
         ))

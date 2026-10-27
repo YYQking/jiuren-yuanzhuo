@@ -28,12 +28,15 @@ from .models import (
     DiscussionSession,
     DiscussionState,
     OpportunityCard,
+    Reaction,
     Role,
     StanceChange,
     TrendSource,
     Utterance,
     ViewpointKind,
 )
+from .mood import face_for_mood, mood_context, mood_of, validate_notes
+from .mood import resolve_face as mood_resolve_face
 from .turn_planner import MODERATOR_ID, TurnPlan, enforce_fairness, plan_turn
 from .roles import mode_for_roles
 from .voice import ANTI_TEMPLATE_RULES, length_instruction, looks_templated
@@ -45,10 +48,6 @@ RECENT_TURNS = 12
 TARGET_QUOTE_LIMIT = 240
 OPENING_QUOTE_LIMIT = 120
 MAX_OPENING_POSITIONS = 9
-
-# Event section: how many utterances a seat must stay on one face before it may
-# flip again.  Without this the same seat oscillates every turn.
-FACE_COOLDOWN = 3
 
 
 def _render_opening_positions(history: Sequence[Utterance], *, exclude_event_id: str | None = None) -> str:
@@ -84,27 +83,17 @@ def current_face(history: Sequence[Utterance], speaker_id: str) -> str:
 
 
 def resolve_face(history: Sequence[Utterance], speaker_id: str, requested: object) -> str:
-    """Decide which face this turn actually shows.
+    """Which side of the persona this turn actually shows.
 
-    The program owns this rule, because the real model never asked to flip (19
-    turns of a live run were 19 阳面).  A seat opens on its 阳面 and then
-    alternates every time it comes back after ``FACE_COOLDOWN`` utterances have
-    passed since its own previous turn; inside the cooldown it keeps the face it
-    had.  ``requested`` is accepted so the call site stays uniform, but it does
-    not get to freeze a seat on one face.
-
-    Returning "" would lose the state, so the opener of a seat always gets an
-    explicit "yang".
+    The program used to alternate faces on a cooldown timer, which made people
+    change personality on schedule.  Now the side follows the temper ledger: a
+    seat only turns sour after something written in the transcript actually
+    landed on it (see ``brainstorm.mood``), and only turns warm again after
+    something lands well.  In between it keeps whatever it showed last.
+    ``requested`` is accepted so the call site stays uniform; the model does not
+    get to announce a face change on its own.
     """
-    current = current_face(history, speaker_id)
-    if not current:
-        return "yang"
-    indices = [index for index, item in enumerate(history) if item.speaker_id == speaker_id]
-    if not indices:
-        return current
-    if len(history) - 1 - indices[-1] < FACE_COOLDOWN:
-        return current
-    return "yin" if current == "yang" else "yang"
+    return mood_resolve_face(history, speaker_id)
 
 
 class ProviderFailure(RuntimeError):
@@ -512,26 +501,34 @@ class AnthropicDiscussionProvider:
         event = mode == "event"
         face_context = ""
         if event and spec.speaker_id != "moderator":
-            shown = current_face(history, spec.speaker_id)
+            mood = mood_of(history, spec.speaker_id)
             face = resolve_face(history, spec.speaker_id, None)
             label = "阳面" if face == "yang" else "阴面"
             material = ""
             if role is not None:
                 material = role.yang if face == "yang" else role.yin
-            if not shown:
-                face_context = f"\n这是你在这张桌上第一次开口。这一条你在{label}（{material}）。\n"
+            spoken = bool(current_face(history, spec.speaker_id))
+            if mood == 0:
+                first = "" if spoken else "这是你在这张桌上第一次开口。"
+                face_context = (
+                    f"\n{first}你现在脸色正常，这一条偏{label}（{material}）。\n"
+                )
             else:
                 face_context = (
-                    f"\n这一条你在{label}（{material}）。"
-                    f"你上一次用的是{'阳面' if shown == 'yang' else '阴面'}；"
-                    "翻了面就直接按这一面说话，不要解释自己为什么变脸。\n"
+                    "\n" + mood_context(history, spec.speaker_id, role.name if role else "")
+                    + f"这一条按{label}说话（{material}）。不要解释自己为什么变脸。\n"
                 )
+            face_context += (
+                "\n如果这句话真的惹到或者哄到了某个人，记进 reactions："
+                "每条写 {\"seat\":\"席位id\",\"delta\":-2到2,\"why\":\"一句人话，为什么\"}。"
+                "最多两条，没影响到谁就给空数组；不要为了热闹硬记。\n"
+            )
         schema = (
             '{"content":"本次发言全文",'
             '"kind":"机会|风险|假设|待验证|总结",'
             '"intent":"support|challenge|question|elaborate|synthesize|initial",'
             '"replies_to":"前文出现过的 event_id 或人名，没有明确对象时填 null",'
-            + ('"face":"yang|yin",' if event else "")
+            + ('"reactions":[{"seat":"席位id","delta":-2,"why":"一句人话"}],' if event else "")
             + '"stance_change":null,'
             '"opportunity":null}'
         )
@@ -539,7 +536,7 @@ class AnthropicDiscussionProvider:
             schema = (
                 '{"content":"本次发言全文","kind":"总结",'
                 '"intent":"synthesize","replies_to":null,'
-                + ('"face":null,' if event else "")
+                + ('"reactions":[],' if event else "")
                 + '"stance_change":null,'
                 '"opportunity":{"title":"...","audience":"...","support":["..."],"risks":["..."],'
                 '"assumptions":["..."],"next_steps":["..."]}}'
@@ -803,9 +800,17 @@ class AnthropicDiscussionProvider:
                     values[key] = [item[:500] for item in value if isinstance(item, str)][:12]
                 opportunity = OpportunityCard(**values)
         face = ""
-        if event and spec.speaker_id != "moderator":
-            face = resolve_face(history, spec.speaker_id, data.get("face"))
-        utterance = Utterance(spec.speaker_id, spec.speaker_name, content.strip(), kind, spec.phase, replies_to, simulated=True, origin="model", intent=intent, verification="unverified", stance_change=stance_change, face=face)
+        reactions: tuple[Reaction, ...] = ()
+        if event:
+            if spec.speaker_id != "moderator":
+                face = resolve_face(history, spec.speaker_id, data.get("face"))
+            reactions = tuple(validate_notes(
+                data.get("reactions"),
+                history=history,
+                seat_ids={item.id for item in roles},
+                speaker_id=spec.speaker_id,
+            ))
+        utterance = Utterance(spec.speaker_id, spec.speaker_name, content.strip(), kind, spec.phase, replies_to, simulated=True, origin="model", intent=intent, verification="unverified", stance_change=stance_change, face=face, reactions=reactions)
         if opportunity:
             # history arrives as a list; never concatenate a tuple onto it.
             seen = list(history) + [utterance]

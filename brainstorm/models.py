@@ -81,6 +81,20 @@ class DiscussionState:
 
 
 @dataclass(frozen=True)
+class Reaction:
+    """One note in the temper ledger: this sentence landed on somebody.
+
+    ``delta`` is a small step (-2..2), ``why`` is the model's own reason in
+    plain words.  Notes live on the utterance that caused them, so the ledger
+    is a pure function of the transcript.
+    """
+
+    seat_id: str
+    delta: int
+    why: str
+
+
+@dataclass(frozen=True)
 class Utterance:
     speaker_id: str
     speaker_name: str
@@ -102,6 +116,8 @@ class Utterance:
     # Event section only: which side of the five-element/trigram pair is showing.
     # ``yang`` / ``yin`` / "" (unknown, treat as whatever the speaker showed last).
     face: str = ""
+    # Temper ledger entries this sentence caused (see ``brainstorm.mood``).
+    reactions: tuple[Reaction, ...] = field(default_factory=tuple)
 
 
 @dataclass

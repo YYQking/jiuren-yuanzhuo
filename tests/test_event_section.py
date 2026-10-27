@@ -8,7 +8,7 @@ from pathlib import Path
 from brainstorm.engine import MockDiscussionProvider
 from brainstorm.export import export_markdown
 from brainstorm.llm import resolve_face
-from brainstorm.models import DiscussionSession, OpportunityCard, Utterance, ViewpointKind
+from brainstorm.models import DiscussionSession, OpportunityCard, Reaction, Utterance, ViewpointKind
 from brainstorm.roles import (
     DEFAULT_ROLES,
     EVENT_ROLES,
@@ -165,30 +165,39 @@ class EventExportTests(unittest.TestCase):
 
 
 class FaceFlipTests(unittest.TestCase):
-    """The two faces must actually alternate; a real run showed 19 turns of 阳面."""
+    """A seat only turns sour when something in the transcript landed on it.
 
-    def _seat(self, speaker_id: str, face: str) -> Utterance:
+    The old rule alternated faces on a timer, which made people change
+    personality on schedule; the model itself never asked to flip.
+    """
+
+    def _seat(self, speaker_id: str, face: str, content: str = "一句", reactions=()) -> Utterance:
         name = {role.id: role.name for role in EVENT_ROLES}[speaker_id]
-        return Utterance(speaker_id, name, "一句", ViewpointKind.ASSUMPTION, "交锋", face=face)
+        return Utterance(
+            speaker_id, name, content, ViewpointKind.ASSUMPTION, "交锋",
+            face=face, reactions=tuple(reactions),
+        )
 
     def _filler(self, index: int) -> Utterance:
         return Utterance("moderator", "主持人", f"第 {index} 段", ViewpointKind.SUMMARY, "状态整理")
 
-    def test_face_flips_to_yin_after_the_cooldown(self):
-        history = [self._seat("qian", "yang")] + [self._filler(i) for i in range(3)]
+    def test_nothing_landed_so_the_face_does_not_move(self):
+        history = [self._seat("qian", "yang")] + [self._filler(i) for i in range(6)]
+        self.assertEqual(resolve_face(history, "qian", "yang"), "yang")
+
+    def test_a_note_that_landed_turns_the_face(self):
+        history = [
+            self._seat("qian", "yang"),
+            self._seat("zhen", "yang", "这事没什么大不了的", [Reaction("qian", -1, "你说这事没什么大不了")]),
+        ]
         self.assertEqual(resolve_face(history, "qian", "yang"), "yin")
 
-    def test_face_holds_inside_the_cooldown(self):
-        history = [self._seat("qian", "yang"), self._filler(1)]
-        self.assertEqual(resolve_face(history, "qian", "yin"), "yang")
-
-    def test_face_flips_back_to_yang(self):
-        history = (
-            [self._seat("qian", "yang")]
-            + [self._filler(i) for i in range(3)]
-            + [self._seat("qian", "yin")]
-            + [self._filler(i) for i in range(10, 13)]
-        )
+    def test_being_pleased_turns_it_back(self):
+        history = [
+            self._seat("qian", "yang"),
+            self._seat("zhen", "yang", "有事你说", [Reaction("qian", -1, "踩到他了")]),
+            self._seat("kun", "yang", "你这话在理", [Reaction("qian", 1, "他认了你的说法")]),
+        ]
         self.assertEqual(resolve_face(history, "qian", "yin"), "yang")
 
 

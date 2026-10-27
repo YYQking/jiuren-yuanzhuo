@@ -10,10 +10,30 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from .models import DiscussionSession, DiscussionState, OpportunityCard, StanceChange, TrendSource, Utterance, ViewpointKind
+from .models import DiscussionSession, DiscussionState, OpportunityCard, Reaction, StanceChange, TrendSource, Utterance, ViewpointKind
 from .roles import MODE_LABELS, mode_for_roles
 
 SCHEMA_VERSION = 6
+
+
+def _reactions_from_data(raw: Any) -> tuple[Reaction, ...]:
+    """Read temper-ledger notes; junk entries are skipped, never fatal."""
+    if not isinstance(raw, list):
+        return ()
+    notes: list[Reaction] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        seat = str(entry.get("seat_id") or entry.get("seat") or "").strip()
+        try:
+            delta = int(entry.get("delta"))
+        except (TypeError, ValueError):
+            continue
+        why = str(entry.get("why") or "").strip()
+        if not seat or not why:
+            continue
+        notes.append(Reaction(seat_id=seat, delta=delta, why=why))
+    return tuple(notes)
 
 
 def _default_dir() -> Path:
@@ -107,6 +127,10 @@ def session_to_dict(session: DiscussionSession) -> dict[str, Any]:
                 } if item.stance_change else None,
                 "duplicate": item.duplicate,
                 "review_note": item.review_note,
+                "reactions": [
+                    {"seat_id": note.seat_id, "delta": note.delta, "why": note.why}
+                    for note in item.reactions
+                ],
             }
             for item in session.utterances
         ],
@@ -179,6 +203,7 @@ def session_from_dict(data: dict[str, Any]) -> DiscussionSession:
                 stance_change=stance_change,
                 duplicate=bool(item.get("duplicate", False)),
                 review_note=str(item.get("review_note", "")),
+                reactions=_reactions_from_data(item.get("reactions")),
             ))
         except (KeyError, TypeError, ValueError) as exc:
             raise ValueError("invalid utterance") from exc
