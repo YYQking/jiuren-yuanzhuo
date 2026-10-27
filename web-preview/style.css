@@ -126,8 +126,9 @@ html, body {
 /* ── 桌面 ───────────────────────────────────────────── */
 .floor { position: relative; min-height: 0; z-index: 2; }
 
-/* 吊灯：一根线从顶上垂下来，锥形灯罩，罩口一点亮。
-   Qt 落地：三个 QLabel/QWidget 叠放，灯罩用 QPainter 画梯形，光晕用径向渐变贴图。 */
+/* 吊灯：天花线盒 → 吊线 → 黄铜灯罩（罩口铜边、罩内暗、灯芯亮）→ 落在绒面上的光。
+   质感靠三件事：竖向的金属高光带（不是一块平涂的渐变）、罩口那圈椭圆亮边、
+   罩里那口"黑洞"（从下往上看灯，看到的是内壁）。 */
 .lamp {
   position: absolute;
   left: 50%;
@@ -137,54 +138,107 @@ html, body {
   flex-direction: column;
   align-items: center;
   pointer-events: none;
-  z-index: 1;
+  z-index: 3; /* 压过桌面，好让灯下的光斑真的落在绒面上 */
 }
+
+/* 天花线盒：一小块深铜，别让吊线从空气里长出来 */
+.lamp .rose {
+  width: 30px;
+  height: 7px;
+  border-radius: 3px 3px 2px 2px;
+  background: linear-gradient(180deg, #241708, #4a3117 55%, #1a1007);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 226, 180, 0.18);
+}
+
 .lamp .cord {
-  width: 1px;
-  height: 34px;
-  background: linear-gradient(180deg, rgba(0, 0, 0, 0.1), rgba(150, 130, 100, 0.45));
+  width: 2px;
+  height: 30px;
+  background: linear-gradient(90deg, #1b1209, #6b4a24 40%, #c79a5c 52%, #513518 72%, #150d06);
 }
+
 .lamp .shade {
   position: relative;
-  width: 118px;
-  height: 52px;
+  width: 140px;
+  height: 62px;
+  border-radius: 70px 70px 14px 14px / 50px 50px 11px 11px;
   background:
-    linear-gradient(176deg, #6f4d24 0%, #3c2713 46%, #22150a 100%);
-  clip-path: polygon(18% 0, 82% 0, 100% 100%, 0 100%);
-  box-shadow: inset 0 2px 0 rgba(255, 232, 186, 0.25);
+    linear-gradient(180deg, rgba(0, 0, 0, 0.55) 0%, rgba(0, 0, 0, 0.06) 34%, rgba(0, 0, 0, 0.42) 100%),
+    linear-gradient(90deg,
+      #170e06 0%, #4a3116 7%, #9c7134 16%, #d9b174 27%, #f6e0b2 34%,
+      #c79a58 44%, #7d5626 56%, #4a3016 68%, #2a1a0c 78%,
+      #6b4a24 87%, #a97b3f 93%, #2c1b0b 100%);
+  box-shadow:
+    inset 0 2px 3px rgba(255, 240, 210, 0.30),
+    inset 0 -3px 8px rgba(0, 0, 0, 0.55),
+    0 10px 26px rgba(0, 0, 0, 0.45);
 }
-/* 罩口那一圈亮边 + 灯泡 */
+
+/* 罩顶那个小小的黄铜喉口，线从这里进去 */
+.lamp .throat {
+  position: absolute;
+  left: 50%;
+  top: -4px;
+  width: 16px;
+  height: 8px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: linear-gradient(180deg, #6b4a24, #2a1a0c);
+  box-shadow: inset 0 1px 0 rgba(255, 232, 190, 0.28);
+}
+
+/* 罩口那圈椭圆铜边：亮铜 + 里侧一条影子 */
 .lamp .shade::after {
   content: "";
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 5px;
-  background: linear-gradient(180deg, rgba(255, 226, 168, 0.55), rgba(255, 226, 168, 0.06));
+  left: -2px;
+  right: -2px;
+  bottom: -1px;
+  height: 12px;
+  border-radius: 50%;
+  background: linear-gradient(90deg,
+    #1a1008 0%, #5c3d1c 12%, #a97b3f 26%, #e8c78e 38%,
+    #f4ddaa 50%, #dcb87c 62%, #a0703a 76%, #4a3016 90%, #170e06 100%);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
 }
+
+/* 从下往上看到的罩内：黑洞 + 一点反光 */
+.lamp .mouth {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 1px;
+  height: 13px;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(255, 196, 120, 0.42), rgba(52, 30, 12, 0.95) 62%, #100904 100%);
+}
+
+/* 灯芯：一小团亮，别做成一个大光球 */
 .lamp .bulb {
   position: absolute;
   left: 50%;
-  bottom: -9px;
-  width: 22px;
-  height: 12px;
+  bottom: 2px;
+  width: 26px;
+  height: 11px;
   transform: translateX(-50%);
   border-radius: 50%;
-  background: radial-gradient(closest-side, #fff4d6, rgba(255, 214, 140, 0.55) 60%, transparent 78%);
-  filter: blur(1px);
+  background: radial-gradient(closest-side, #fffaf0, #ffe0a8 48%, rgba(255, 196, 120, 0.55) 74%, transparent 100%);
+  filter: blur(0.6px);
 }
-/* 灯光落在桌面上的一团暖光 */
+
+/* 灯光落在桌面上的一层暖光：铺满整张桌，像环境光，不做成一个聚光斑 */
 .lamp .halo {
   position: absolute;
   left: 50%;
-  top: 86px;
-  width: 520px;
-  height: 300px;
-  transform: translate(-50%, -8%);
+  top: 92px;
+  width: 900px;
+  height: 560px;
+  transform: translate(-50%, 0);
   border-radius: 50%;
-  background: radial-gradient(closest-side, rgba(255, 218, 156, 0.16), rgba(255, 218, 156, 0.05) 55%, transparent 78%);
-  filter: blur(6px);
+  background:
+    radial-gradient(closest-side, rgba(255, 228, 176, 0.11), rgba(255, 214, 150, 0.05) 46%, transparent 74%),
+    radial-gradient(closest-side, rgba(255, 242, 210, 0.08), transparent 46%);
+  filter: blur(18px);
+  mix-blend-mode: screen;
 }
 
 .table {
@@ -322,11 +376,11 @@ html, body {
   position: absolute;
   left: 50%;
   top: calc(50% - 2px);
-  width: 210px;
-  height: 132px;
+  width: 236px;
+  height: 152px;
   transform: translate(-50%, -50%);
   border-radius: 50%;
-  background: radial-gradient(58% 64% at 50% 50%, rgba(0, 0, 0, 0.30), transparent 74%);
+  background: radial-gradient(56% 62% at 50% 50%, rgba(0, 0, 0, 0.44), rgba(0, 0, 0, 0.18) 68%, transparent 80%);
   pointer-events: none;
 }
 .plaque {
@@ -443,6 +497,9 @@ html, body {
 }
 .seat.in { opacity: 1; transform: none; }
 .seat.dim { filter: brightness(0.42) saturate(0.55); }
+/* 近桌那两个人：名字挂到头顶（底下被发言面板挡着），影子也跟着挪到头顶 */
+.seat.bottom { flex-direction: column-reverse; }
+.seat.bottom::before { bottom: auto; top: -16px; }
 
 /* 每个人在桌面上落一点影子，人才像"站在那儿"而不是浮着。
    用 ::before 而不是 ::after，这样它天然排在头像下面，不会被压到别处去。 */

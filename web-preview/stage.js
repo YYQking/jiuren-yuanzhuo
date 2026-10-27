@@ -114,8 +114,14 @@ function layout() {
     // 整圈错开半步：不让任何一个座位正好落在吊灯底下（灯在正上方）
     const angle = (-90 + (i + 0.5) * (360 / DEMO.seats.length)) * Math.PI / 180;
     const node = seatNodes.get(seat.id);
+    const sin = Math.sin(angle);
+    // 上半个圈往外让：躲开桌子边缘和吊灯；下半个圈收进来：给底下的发言面板让位
     node.style.left = `${cx + rx * Math.cos(angle)}px`;
-    node.style.top = `${cy + ry * Math.sin(angle)}px`;
+    node.style.top = `${cy + ry * sin * (sin < 0 ? 1.14 : 0.70)}px`;
+    // 近桌那两位整体抬高一点，顺便只留名字（职责那行放不下）
+    const isBottom = sin > 0.5;
+    node.classList.toggle('bottom', isBottom);
+    if (isBottom) node.style.top = `${parseFloat(node.style.top) - 30}px`;
   });
 
   el.replies.setAttribute('viewBox', `0 0 ${box.width} ${box.height}`);

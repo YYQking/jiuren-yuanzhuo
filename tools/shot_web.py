@@ -1,7 +1,10 @@
 """把 web-preview/index.html 用 QtWebEngine 渲染成 PNG，用来肉眼验收网页原型。
 
 只做截图，不联网（页面自己读本地 data.js）。
-用法：python artifacts/shot_web.py web-preview/index.html artifacts/shot-s1.png [--clicks N]
+用法：python tools/shot_web.py web-preview/index.html artifacts/shot-s1.png [--clicks N]
+
+截图前会关掉所有过渡/动画并等一帧，否则同一组点击在不同时刻截出来亮度都不一样，
+像素检查就会误报。
 """
 
 from __future__ import annotations
@@ -12,6 +15,12 @@ from pathlib import Path
 from PySide6.QtCore import QTimer, QUrl
 from PySide6.QtWidgets import QApplication
 from PySide6.QtWebEngineWidgets import QWebEngineView
+
+FREEZE = (
+    "(() => { const s = document.createElement('style');"
+    " s.textContent = '*,*::before,*::after{transition:none!important;animation:none!important}';"
+    " document.head.appendChild(s); return 1; })()"
+)
 
 
 def main() -> int:
@@ -26,20 +35,24 @@ def main() -> int:
     view.resize(1600, 1000)
     view.show()
 
-    js = "document.body.click();" * 0
+    def step(i: int) -> None:
+        # 一次一次点，给每次点击留出过场时间，保证截到的是"停住"的那一帧
+        if i >= clicks:
+            QTimer.singleShot(1200, freeze)
+            return
+        view.page().runJavaScript("document.body.click();")
+        QTimer.singleShot(150, lambda: step(i + 1))
 
-    def grab() -> None:
-        # 点 N 次（模拟用户一条一条往前翻），再截。
-        for _ in range(clicks):
-            view.page().runJavaScript("document.body.click();")
-        QTimer.singleShot(900, save)
+    def freeze() -> None:
+        view.page().runJavaScript(FREEZE)
+        QTimer.singleShot(250, save)
 
     def save() -> None:
         view.grab().save(str(out))
         print(f"saved {out} ({out.stat().st_size} bytes)")
         app.quit()
 
-    view.loadFinished.connect(lambda ok: QTimer.singleShot(1200, grab) if ok else (print("load failed"), app.quit()))
+    view.loadFinished.connect(lambda ok: QTimer.singleShot(1200, lambda: step(0)) if ok else (print("load failed"), app.quit()))
     view.load(QUrl.fromLocalFile(str(page)))
     return app.exec()
 
