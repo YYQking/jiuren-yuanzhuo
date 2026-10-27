@@ -229,6 +229,23 @@ C:\Users\14726\Desktop\九人圆桌\
 
 打包中间产物同样只留一套：`dist-qt`（当前）与 `build-qt`（打包过程），打完即删 `build-qt`。2026-10-27 清理了 28 个历史打包目录（`build-*` / `dist-*`）与 `desktop-release\九人圆桌桌面版-无限讨论`，回收 1.79 GB——不要再攒。`desktop-release\verification` 里的截图证据体积小，保留。
 
+### 更新 = 跑一条命令，两处一起刷新（2026-10-27 用户要求）
+
+用户原话：「以后更新同时更新这两处」。已做成脚本，不要再用手工 cp/zip：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/deploy.ps1
+# 只换文件不重新打包：追加 -SkipBuild
+```
+
+`tools/deploy.ps1` 依次做：PyInstaller 打包（到 `dist-qt`，成功后删 `build-qt`）→ 生成 `使用说明.txt`（UTF-8+BOM）→ 旧版整体移入 `备份\`（**哈希相同则跳过**，`备份\` 只留一份）→ 换上新的自己用那份 → 用**干净暂存副本**重做 `发给别人的\九人圆桌-发给别人用.zip`（绝不把 `发给别人的\`、`备份\` 套进 zip）→ 三项校验：两处 exe 哈希一致、`_internal\Qt6Core.dll` 存在、zip 内 exe 哈希一致且无设置/缓存/备份条目、说明书带 BOM。
+
+已实测：`-SkipBuild` 路径 exit 0（本轮）；备份分支用临时目标目录（`-TargetRoot`）造了一个假旧版跑通——旧 exe/_internal/说明书进入 `备份\`、`备份\说明.txt` 保留、新版就位、zip 186 条目。`-TargetRoot` 只用于测试部署流程。
+
+打包版启动验证仍需手工：`cmd /c start "" "<exe>"` 后**另起一次调用**查 `MainWindowTitle`／`IsWindowVisible`／尺寸，别在同一次调用结束前 Stop-Process（会把被测进程一起收掉）。
+
+**编辑 `tools/*.ps1` 后必须补回 UTF-8 BOM**：`edit` 工具会写掉 BOM，PS 5.1 随即按 ANSI 读取，中文字符串全变乱码并报 `Unexpected token`。补 BOM 的命令见 §9 开头几节的 `WriteAllText(... UTF8Encoding($true))` 写法。
+
 ## 10. 已验证证据与边界
 
 上一次交付会话的验证结果（2026-10-12 之前）：
