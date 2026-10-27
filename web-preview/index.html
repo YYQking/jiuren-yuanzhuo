@@ -29,6 +29,13 @@
   </div>
 
   <main class="floor">
+    <!-- 桌子正上方那盏灯 -->
+    <div class="lamp" aria-hidden="true">
+      <span class="cord"></span>
+      <span class="shade"><span class="bulb"></span></span>
+      <span class="halo"></span>
+    </div>
+
     <!-- 绿绒赌桌：金边、绒面、中央底池 -->
     <div class="table" id="table">
       <div class="rail"></div>
@@ -37,8 +44,9 @@
       <div class="pot">
         <div class="pot-chips" id="potChips"></div>
         <div class="plaque">
-          <span id="platePhase">开题</span>
-          <small id="plateCount">8 人围坐</small>
+          <b class="seal" id="plateSeal">壹</b>
+          <span id="platePhase">开局</span>
+          <small id="plateCount">八人围坐</small>
         </div>
       </div>
       <div class="dealer" id="dealer">

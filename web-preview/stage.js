@@ -19,6 +19,7 @@ const el = {
   voiceover: document.getElementById('voiceover'),
   table: document.getElementById('table'),
   platePhase: document.getElementById('platePhase'),
+  plateSeal: document.getElementById('plateSeal'),
   plateCount: document.getElementById('plateCount'),
   potChips: document.getElementById('potChips'),
   dealer: document.getElementById('dealer'),
@@ -42,6 +43,20 @@ const INTENT_TEXT = {
   question: '追问',
   synthesize: '收束',
 };
+
+/* 阶段名统一成两个字，而且要文雅——混着 2/3/4 个字，字距一拉开就显得土。
+   这套词只改"显示"，不动数据。 */
+const PHASE_TEXT = {
+  '开场': '起局',
+  '独立观点': '立论',
+  '正反交锋': '交锋',
+  '阶段总结': '收束',
+  '回答提问': '应答',
+  '补充观点': '补述',
+  '正面反驳': '争锋',
+};
+const SEAL_NUM = ['壹', '贰', '叁', '肆', '伍', '陆', '柒', '捌', '玖'];
+const CN_NUM = { 1: '一', 2: '二', 3: '三', 4: '四', 5: '五', 6: '六', 7: '七', 8: '八', 9: '九', 10: '十' };
 const TRIGRAM_GLYPH = /[☰☱☲☳☴☵☶☷]/;
 
 let index = -1;
@@ -49,13 +64,18 @@ let started = false;
 let revealTimer = null;
 let seatNodes = new Map();
 let geo = { cx: 0, cy: 0, rx: 0, ry: 0 };
+let phaseOrder = [];
 
 /* ── 起手：铺桌子、摆席位、发暗牌 ───────────────────── */
 function boot() {
   el.topic.textContent = DEMO.topic;
   el.tableName.textContent = DEMO.section_label;
-  el.plateCount.textContent = `${DEMO.seats.length} 人围坐`;
+  el.plateCount.textContent = `${CN_NUM[DEMO.seats.length] || DEMO.seats.length} 人围坐`;
   el.counter.textContent = `第 0 / ${DEMO.turns.length} 条`;
+
+  for (const turn of DEMO.turns) {
+    if (turn.phase && !phaseOrder.includes(turn.phase)) phaseOrder.push(turn.phase);
+  }
 
   for (const seat of DEMO.seats) {
     const glyph = (String(seat.trigram).match(TRIGRAM_GLYPH) || ['☰'])[0];
@@ -146,7 +166,9 @@ function render(turn, animate) {
   clearTimeout(revealTimer);
 
   el.counter.textContent = `第 ${index + 1} / ${DEMO.turns.length} 条`;
-  el.platePhase.textContent = turn.phase || '讨论中';
+  el.platePhase.textContent = PHASE_TEXT[turn.phase] || turn.phase || '交锋';
+  const phaseIndex = phaseOrder.indexOf(turn.phase);
+  el.plateSeal.textContent = SEAL_NUM[phaseIndex >= 0 ? phaseIndex : 0];
   if (animate) {
     rebuildPot();
   }

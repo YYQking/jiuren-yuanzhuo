@@ -126,6 +126,67 @@ html, body {
 /* ── 桌面 ───────────────────────────────────────────── */
 .floor { position: relative; min-height: 0; z-index: 2; }
 
+/* 吊灯：一根线从顶上垂下来，锥形灯罩，罩口一点亮。
+   Qt 落地：三个 QLabel/QWidget 叠放，灯罩用 QPainter 画梯形，光晕用径向渐变贴图。 */
+.lamp {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+  z-index: 1;
+}
+.lamp .cord {
+  width: 1px;
+  height: 34px;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.1), rgba(150, 130, 100, 0.45));
+}
+.lamp .shade {
+  position: relative;
+  width: 118px;
+  height: 52px;
+  background:
+    linear-gradient(176deg, #6f4d24 0%, #3c2713 46%, #22150a 100%);
+  clip-path: polygon(18% 0, 82% 0, 100% 100%, 0 100%);
+  box-shadow: inset 0 2px 0 rgba(255, 232, 186, 0.25);
+}
+/* 罩口那一圈亮边 + 灯泡 */
+.lamp .shade::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 5px;
+  background: linear-gradient(180deg, rgba(255, 226, 168, 0.55), rgba(255, 226, 168, 0.06));
+}
+.lamp .bulb {
+  position: absolute;
+  left: 50%;
+  bottom: -9px;
+  width: 22px;
+  height: 12px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: radial-gradient(closest-side, #fff4d6, rgba(255, 214, 140, 0.55) 60%, transparent 78%);
+  filter: blur(1px);
+}
+/* 灯光落在桌面上的一团暖光 */
+.lamp .halo {
+  position: absolute;
+  left: 50%;
+  top: 86px;
+  width: 520px;
+  height: 300px;
+  transform: translate(-50%, -8%);
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(255, 218, 156, 0.16), rgba(255, 218, 156, 0.05) 55%, transparent 78%);
+  filter: blur(6px);
+}
+
 .table {
   position: absolute;
   left: 50%;
@@ -137,6 +198,34 @@ html, body {
   transition: transform 800ms cubic-bezier(.2,.8,.2,1), opacity 800ms ease;
 }
 .table.in { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+
+/* 桌子压在地面上的影子，让桌子"有厚度" */
+.table::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -26px;
+  width: 92%;
+  height: 52px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(0, 0, 0, 0.72), transparent 72%);
+  filter: blur(5px);
+  z-index: -1;
+}
+
+/* 桌体厚度：桌面底下压着一圈更暗的皮革，像有厚度的实体桌，不是一张纸 */
+.table::before {
+  content: "";
+  position: absolute;
+  inset: -6px -6px -12px;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, #1a0f07 0%, #0d0804 70%, #070403 100%);
+  box-shadow:
+    inset 0 -10px 18px rgba(0, 0, 0, 0.7),
+    inset 0 8px 12px rgba(255, 226, 176, 0.06);
+  z-index: -1;
+}
 
 /* 桌沿：皮革包边。两道细金线 + 一圈缝线，不做粗描边。 */
 .rail {
@@ -165,18 +254,20 @@ html, body {
   border: 1px dashed rgba(240, 217, 166, 0.16);
 }
 
-/* 绿绒：中间亮、边缘沉，叠一层极淡的绒面颗粒 */
+/* 绿绒：中间亮、边缘沉，叠一层极淡的绒面颗粒，再加一层灯下暖光 */
 .felt {
   position: absolute;
   inset: 16px;
   border-radius: 50%;
   background:
     url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='g'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='120' height='120' filter='url(%23g)' opacity='0.5'/></svg>") 0 0 / 120px 120px,
+    radial-gradient(58% 52% at 50% 26%, rgba(255, 226, 168, 0.10), transparent 72%),
     radial-gradient(closest-side, #1b6e52 0%, #0d4a34 58%, #07271c 100%);
-  background-blend-mode: overlay, normal;
+  background-blend-mode: overlay, screen, normal;
   box-shadow:
-    inset 0 0 82px rgba(0, 0, 0, 0.5),
-    inset 0 2px 0 rgba(255, 255, 255, 0.07);
+    inset 0 0 92px rgba(0, 0, 0, 0.56),
+    inset 0 3px 0 rgba(255, 255, 255, 0.08),
+    inset 0 -14px 26px rgba(0, 0, 0, 0.34);
 }
 .felt::after {
   content: "";
@@ -224,37 +315,79 @@ html, body {
   to { transform: none; opacity: 1; }
 }
 
-/* 阶段文字：像桌布上织出来的花纹——无边框、压深、字距拉开、带一点凹凸 */
+/* 桌面正中：一枚印章 + 烫金的阶段字。不再用"字距拉开的灰字"那种土法。
+   里面一圈是绒面压出来的凹痕，外面一圈是烫金线的椭圆框。 */
 .pot::before {
   content: "";
   position: absolute;
   left: 50%;
   top: calc(50% - 2px);
-  width: 128px;
-  height: 70px;
+  width: 176px;
+  height: 106px;
   transform: translate(-50%, -50%);
   border-radius: 50%;
-  border: 1px solid rgba(240, 217, 166, 0.10);
+  border: 1px solid rgba(240, 217, 166, 0.17);
+  box-shadow:
+    inset 0 0 0 5px rgba(0, 0, 0, 0.09),
+    inset 0 1px 0 rgba(255, 246, 224, 0.06),
+    0 0 18px rgba(0, 0, 0, 0.22);
   pointer-events: none;
 }
-.plaque { padding: 0; background: none; border: 0; box-shadow: none; text-align: center; white-space: nowrap; }
+.plaque {
+  padding: 0;
+  background: none;
+  border: 0;
+  box-shadow: none;
+  text-align: center;
+  white-space: nowrap;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 小印章：朱红底、米色字，只有一枚，不抢戏 */
+.seal {
+  display: block;
+  font-family: "Songti SC", "SimSun", serif;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: 0;
+  padding: 3px 3px 4px;
+  color: #f4e3cd;
+  background: linear-gradient(180deg, #8f3125, #6d2119);
+  border-radius: 2px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45), inset 0 0 0 1px rgba(255, 220, 190, 0.28);
+}
+
+/* 阶段字：像压在绒面上的金箔。
+   用实心暖金 + 凹刻阴影（不用 background-clip:text 的渐变填充）：
+   一是这类渐变字在部分渲染器上会整行画没，二是搬回 Qt 时实心字最好画。 */
 .plaque span {
   display: block;
   font-family: "Songti SC", "SimSun", "Noto Serif SC", serif;
-  font-size: 19px;
-  letter-spacing: 0.5em;
-  text-indent: 0.5em;
-  color: rgba(236, 228, 210, 0.32);
-  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.6), 0 -1px 0 rgba(255, 255, 255, 0.045);
+  font-size: 22px;
+  letter-spacing: 0.3em;
+  text-indent: 0.3em;
+  color: #eed9a6;
+  text-shadow:
+    0 1px 0 rgba(0, 0, 0, 0.8),
+    0 -1px 0 rgba(255, 242, 214, 0.16),
+    0 0 26px rgba(238, 202, 132, 0.30);
 }
 .plaque small {
   display: block;
-  margin-top: 5px;
   font-size: 9px;
-  letter-spacing: 0.36em;
-  text-indent: 0.36em;
-  color: rgba(236, 228, 210, 0.18);
-  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.55);
+  letter-spacing: 0.3em;
+  text-indent: 0.3em;
+  color: rgba(236, 228, 210, 0.26);
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.5);
+}
+
+/* 万一哪一版渲染器不支持文字渐变裁切，退回实心金色，别让字直接消失 */
+@supports not ((-webkit-background-clip: text) or (background-clip: text)) {
+  .plaque span { color: #e6c88e; }
 }
 
 /* 荷官：桌子对面上沿一只牌靴 */
