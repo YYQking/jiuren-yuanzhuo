@@ -507,7 +507,7 @@ if (-not ($b[0] -eq 0xEF -and $b[1] -eq 0xBB -and $b[2] -eq 0xBF)) {
 
 **用户要求：每次更新都推到 GitHub；介绍和使用说明要中文。**
 
-- 仓库：`https://github.com/YYQking/-`（仓库名就是一个减号，用户自己起的），分支 `main`。
+- 仓库：`https://github.com/YYQking/jiuren-yuanzhuo`（原名就是一个减号，2026-10-27 改成 jiuren-yuanzhuo），分支 `main`。
 - 推送靠 HTTPS + Windows 凭据管理器里存的 PAT（用户名 `YYQking`）。全局曾经有一条把 github.com 改写成 `gh-proxy.com` 的 `insteadOf`，已删；本仓库 `http.proxy` 是空串（不是没设）。
 - **`github.com:443` 会间歇性连不上**（`api.github.com`、`codeload.github.com`、`ssh.github.com:443`、`uploads.github.com` 都通）。连不上时 `git push` 报 `Failed to connect to github.com:443 after 21000 ms`，重试几次可能通。
 - 兜底路线（已验证可用）：用 API 发文件（`PUT /repos/:o/:r/contents/:path`，带 `sha` 表示更新）和传发行包（`POST /repos/:o/:r/releases` + `POST uploads.github.com/.../assets?name=`）。脚本在 `artifacts/publish_docs.py`、`artifacts/upload_release.py`（token 从 `git credential fill` 读，不打印）。

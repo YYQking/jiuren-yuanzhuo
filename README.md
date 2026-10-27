@@ -26,7 +26,7 @@
 
 ## 怎么用
 
-1. 打开 [Releases 页面](https://github.com/YYQking/-/releases/latest)，下载 `jiuren-yuanzhuo-2026-10-27.zip`（就是九人圆桌的完整包，GitHub 只让用英文字母做附件名）。
+1. 打开 [Releases 页面](https://github.com/YYQking/jiuren-yuanzhuo/releases/latest)，下载 `jiuren-yuanzhuo-2026-10-27.zip`（就是九人圆桌的完整包，GitHub 只让用英文字母做附件名）。
 2. 解压到任意文件夹（**不要**只把里面的 exe 拖出来——exe 只有 2.4MB，缺了 `_internal` 跑不起来，必须整个文件夹一起用）。
 3. 双击 `九人圆桌.exe`。
 4. 大厅里：选分区 → 点牌选人（最少两张）→ 填题目 → 开桌。

@@ -2,7 +2,7 @@
 
 怎么下
 ------
-1. 浏览器打开 https://github.com/YYQking/-/releases/latest
+1. 浏览器打开 https://github.com/YYQking/jiuren-yuanzhuo/releases/latest
 2. 下载「jiuren-yuanzhuo-2026-10-27.zip」（约 54MB）
    （这就是九人圆桌的完整包。GitHub 只允许附件名用英文，所以文件名是拼音，东西是一样的）
 3. 解压整个文件夹（别只把 exe 拖出来）
