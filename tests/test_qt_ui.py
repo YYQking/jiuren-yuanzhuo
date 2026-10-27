@@ -619,6 +619,14 @@ class QtUiTests(unittest.TestCase):
         self.assertEqual(page.canvas._avatar_pixmaps.keys(), business_ids)
 
 
+    def test_bubble_text_is_big_enough_to_read(self):
+        """用户嫌气泡里的字小；这里盯住字号别再被改回去。"""
+
+        page = RoundtablePage(self.controller)
+        page.resize(1600, 1000)
+        page._set_bubble("正在查找与主题相关的新闻标题和摘要……")
+        self.assertIn("font-size: 21px", page.bubble.styleSheet())
+
     def test_window_mode_cycles_and_never_minimizes(self):
         window = MainWindow()
         window.showFullScreen()
