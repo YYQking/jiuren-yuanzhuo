@@ -67,6 +67,7 @@ from .config import AppConfig
 from .models import DiscussionSession, Role, Utterance, ViewpointKind
 from .hotspot_page import HotspotPage
 from .hotspots import HotspotCache, HotspotProvider, default_hotspot_feeds
+from .carryover import carry_note
 from .model_hotspots import HybridHotspotProvider, ModelHotspotProvider
 from .mood import mood_label, mood_of, quiet_seats
 from .providers import resolve_providers
@@ -1658,6 +1659,8 @@ class SummaryPage(QWidget):
     lobby_requested = Signal()
     window_mode_requested = Signal()
     exit_requested = Signal()
+    continue_requested = Signal(object)
+    replay_requested = Signal(object)
 
     def __init__(self, session: DiscussionSession | None = None, parent=None) -> None:
         super().__init__(parent)
@@ -1683,6 +1686,21 @@ class SummaryPage(QWidget):
         self.summary_meta.setStyleSheet(f"color: {COLORS['muted']}; margin-left: 18px;")
         header.addWidget(self.summary_meta, 1)
         header.addStretch()
+        # 反复琢磨同一个问题用得上这两个：一个带着上一场往下问，一个空手重开
+        self.continue_button = QPushButton("接着再聊")
+        self.continue_button.setToolTip(
+            "同一题目、同一批人，把这一场的结论和没吵完的地方带进下一场；\n"
+            "新的一场不会再说一遍已经说过的内容。"
+        )
+        self.continue_button.clicked.connect(self._emit_continue)
+        header.addWidget(self.continue_button)
+        self.replay_button = QPushButton("再讨论一次")
+        self.replay_button.setToolTip(
+            "同一题目、同一批人，什么都不带，重新开一场。\n"
+            "把两场的结论摆一起看：每次都出现的多半是真的，每次都不一样的多半是猜的。"
+        )
+        self.replay_button.clicked.connect(self._emit_replay)
+        header.addWidget(self.replay_button)
         window = QPushButton("窗口化")
         window.clicked.connect(self.window_mode_requested)
         header.addWidget(window)
@@ -1716,6 +1734,10 @@ class SummaryPage(QWidget):
 
     def set_session(self, session: DiscussionSession) -> None:
         self.session = session
+        # 一场一句话都没说成的时候，这两个按钮点下去只会开一张空桌
+        has_talk = bool(session.utterances)
+        self.continue_button.setEnabled(has_talk)
+        self.replay_button.setEnabled(has_talk)
         while self.content_layout.count():
             item = self.content_layout.takeAt(0)
             if item.widget() is not None:
@@ -1755,6 +1777,14 @@ class SummaryPage(QWidget):
         )
         self._add_section("桌上观点从哪里来？", session.viewpoint_source_description)
         self.content_layout.addStretch()
+
+    def _emit_continue(self) -> None:
+        if self.session is not None:
+            self.continue_requested.emit(self.session)
+
+    def _emit_replay(self) -> None:
+        if self.session is not None:
+            self.replay_requested.emit(self.session)
 
     def _add_section(self, title: str, body: str, *, emphasized: bool = False) -> None:
         frame = QFrame()
@@ -1846,6 +1876,8 @@ class MainWindow(QMainWindow):
         self.summary.lobby_requested.connect(self._back_to_lobby)
         self.summary.window_mode_requested.connect(self._toggle_window_mode)
         self.summary.exit_requested.connect(self.close)
+        self.summary.continue_requested.connect(self._continue_session)
+        self.summary.replay_requested.connect(self._replay_session)
         self.hotspots.back_requested.connect(self._back_to_lobby)
         self.hotspots.discuss_requested.connect(self._discuss_hotspot)
         self.hotspots.window_mode_requested.connect(self._toggle_window_mode)
@@ -1875,6 +1907,34 @@ class MainWindow(QMainWindow):
         self.lobby.topic.setText(topic)
         self.lobby.source.setPlainText(note)
         self._start(topic, roles, note, fetch_news=False)
+
+    def _seats_from_session(self, session: DiscussionSession) -> list[Role]:
+        """上一场坐了谁，这一场就还坐谁；一个都认不出来就整桌照旧。"""
+
+        pool = default_roles_for(session.mode)
+        wanted = set(session.selected_role_ids or [])
+        picked = [role for role in pool if role.id in wanted]
+        return picked or pool
+
+    def _restart_from(self, session: DiscussionSession, note: str) -> None:
+        topic = (session.topic or "").strip()
+        if not topic:
+            return
+        self.lobby.set_mode(session.mode)
+        roles = self._seats_from_session(session)
+        self.lobby.topic.setText(topic)
+        self.lobby.source.setPlainText(note)
+        self._start(topic, roles, note, fetch_news=False)
+
+    def _continue_session(self, session: DiscussionSession) -> None:
+        """同一题目接着往下问：把上一场的结论和分歧当底稿带进去。"""
+
+        self._restart_from(session, carry_note(session))
+
+    def _replay_session(self, session: DiscussionSession) -> None:
+        """同一题目空手重开：用来对照「哪些结论稳定、哪些是随机猜的」。"""
+
+        self._restart_from(session, "")
 
     def _ai_settings(self) -> None:
         dialog = AISettingsDialog(self.config, self)

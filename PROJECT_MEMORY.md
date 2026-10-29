@@ -196,6 +196,19 @@
 
 **注意：** 质检回炉现在会真的触发（两次跑测共 6 次带具体批评的重写），这是好事，但也意味着**请求数和等待会长一点**——用户已明确"花钱不重要，讨论有效性重要"。
 
+### 7.4 同一个问题要能反复琢磨（2026-10-30，已加）
+
+用户问「假如我是一个学易的人，想用这个软件来反复弄清楚一个问题可以么」。实查结论：**一场之内可以追问很久**（分层议题把可聊量拉到四十条上下）；但**关了重开就是新的一场，不带上一场任何东西**——`_open_history` → `roundtable.load_session` + `_show_summary` 只能看不能续。
+
+总结页加了两个按钮（`brainstorm/qt_app.py` 的 `SummaryPage`，信号 `continue_requested` / `replay_requested`）：
+
+- **接着再聊** → `MainWindow._continue_session(session)`：用 `brainstorm/carryover.py` 的 `carry_note(session)` 生成底稿填进大厅「补充材料」，题目与席位按上一场恢复（`_seats_from_session`），再 `_start(topic, roles, note, fetch_news=False)`。
+- **再讨论一次** → `MainWindow._replay_session(session)`：同题同人、底稿为空，用来对照哪条结论稳定、哪条是随机猜的。
+
+`carry_note` 的硬约束（`tests/test_carryover.py` 9 项、`tests/test_qt_ui.py` 4 项）：总长上限 `TOTAL_LIMIT=1500`、单项 `ITEM_LIMIT=70`、未完成分歧只留 `DISPUTE_LIMIT=3`（`intent` 属于 `("challenge","question","反驳","质疑")`，倒序取最近再反回时间序）；底稿必须写明「不是外部事实，不能当成已经证实的情报引用」，必须禁止复述已说过的话，模糊处仍要标「我猜／我听说」。档案字段名一律走 `SECTION_TEXT[session.mode]`，所以事件区自然说「吃瓜纪要」、观点区说「说法体检单」。
+
+空场（`utterances` 为 0）时两个按钮置灰，避免点出一张空桌。
+
 ## 8. 代码导航
 
 | 文件 | 职责 |

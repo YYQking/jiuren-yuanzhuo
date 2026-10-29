@@ -619,6 +619,62 @@ class QtUiTests(unittest.TestCase):
         self.assertEqual(page.canvas._avatar_pixmaps.keys(), business_ids)
 
 
+    def test_summary_offers_continue_and_replay(self):
+        """同一个问题要能反复琢磨：一场带底稿接着聊，一场空手重开。"""
+
+        session = DiscussionSession(topic="车位被物业转租", mode="event", selected_role_ids=["qian", "kun"])
+        session.utterances = [
+            Utterance(speaker_id="qian", speaker_name="乾明", content="我先定个调", kind=ViewpointKind.FACT, phase="独立观点"),
+        ]
+        page = SummaryPage()
+        page.set_session(session)
+        self.assertTrue(page.continue_button.isEnabled())
+        self.assertTrue(page.replay_button.isEnabled())
+
+        fired = []
+        page.continue_requested.connect(lambda s: fired.append(("继续", s.topic)))
+        page.replay_requested.connect(lambda s: fired.append(("重开", s.topic)))
+        page.continue_button.click()
+        page.replay_button.click()
+        self.assertEqual(fired, [("继续", "车位被物业转租"), ("重开", "车位被物业转租")])
+
+    def test_summary_buttons_stay_off_for_an_empty_session(self):
+        page = SummaryPage()
+        page.set_session(DiscussionSession(topic="什么都没聊成", mode="business"))
+        self.assertFalse(page.continue_button.isEnabled())
+        self.assertFalse(page.replay_button.isEnabled())
+
+    def test_continue_seats_the_same_people_and_carries_the_last_round(self):
+        window = MainWindow()
+        calls = []
+        window._start = lambda topic, roles, source, fetch_news=False: calls.append(
+            (topic, [role.id for role in roles], source)
+        )
+        session = DiscussionSession(topic="车位被物业转租", mode="event", selected_role_ids=["qian", "kan"])
+        session.utterances = [
+            Utterance(speaker_id="kan", speaker_name="坎川", content="你想过没有，这钱谁出？", kind=ViewpointKind.FACT, phase="正反交锋", intent="question"),
+        ]
+        window._continue_session(session)
+        topic, ids, note = calls[0]
+        self.assertEqual(topic, "车位被物业转租")
+        self.assertEqual(ids, ["qian", "kan"])
+        self.assertIn("上一场的底稿", note)
+        self.assertIn("你想过没有，这钱谁出？", note)
+        self.assertEqual(window.lobby.topic.text(), "车位被物业转租")
+        self.assertIn("上一场的底稿", window.lobby.source.toPlainText())
+
+    def test_replay_starts_over_with_nothing_carried(self):
+        window = MainWindow()
+        calls = []
+        window._start = lambda topic, roles, source, fetch_news=False: calls.append((topic, [role.id for role in roles], source))
+        session = DiscussionSession(topic="车位被物业转租", mode="event", selected_role_ids=["qian"])
+        session.utterances = [
+            Utterance(speaker_id="qian", speaker_name="乾明", content="我先定个调", kind=ViewpointKind.FACT, phase="独立观点"),
+        ]
+        window._replay_session(session)
+        self.assertEqual(calls[0][2], "")
+        self.assertEqual(window.lobby.source.toPlainText(), "")
+
     def test_bubble_text_is_big_enough_to_read(self):
         """用户嫌气泡里的字小；这里盯住字号别再被改回去。"""
 
