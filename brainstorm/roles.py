@@ -194,6 +194,20 @@ def mode_label(mode: str) -> str:
     return MODE_LABELS.get(mode, MODE_LABELS["business"])
 
 
+def role_name(mode: str, role_id: str) -> str:
+    """Display name for a seat id, so archives never print internal ids.
+
+    Old archives store ids such as ``trend`` or ``claim_advocate``; printing
+    those leaks the schema into the summary and the exported file.  An unknown
+    id falls back to itself rather than raising, so a corrupt archive still
+    renders.
+    """
+    for role in ROLES_BY_MODE.get(mode, DEFAULT_ROLES):
+        if role.id == role_id:
+            return role.name
+    return role_id
+
+
 FACE_LABELS = {"yang": "阳面", "yin": "阴面"}
 
 

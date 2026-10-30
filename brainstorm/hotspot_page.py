@@ -89,15 +89,23 @@ class HotspotCard(QFrame):
             expand.setCheckable(True)
             expand.clicked.connect(lambda checked: self.summary.setText(summary if checked else short_summary))
             actions.addWidget(expand)
-        self.open_button = QPushButton("打开原文 ↗")
         try:
             parsed = urlsplit(item.url)
         except ValueError:
             parsed = None
-        self.open_button.setEnabled(bool(parsed and parsed.scheme in {"https", "http"} and parsed.netloc))
-        self.open_button.setToolTip(item.url or "来源未提供原文链接")
-        self.open_button.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(item.url)))
-        actions.addWidget(self.open_button)
+        has_link = bool(parsed and parsed.scheme in {"https", "http"} and parsed.netloc)
+        if has_link:
+            self.open_button = QPushButton("打开原文 ↗")
+            self.open_button.setToolTip(item.url)
+            self.open_button.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(item.url)))
+            actions.addWidget(self.open_button)
+        else:
+            # AI 回忆条目本来就没有原文链接。以前摆一颗灰掉的「打开原文」，
+            # 点了毫无反应，看起来像程序坏了；直接说清楚为什么没有。
+            self.open_button = _plain_label("这类条目没有原文链接")
+            self.open_button.setStyleSheet(f"color: {COLORS['dim']}; font-size: 11px;")
+            self.open_button.setToolTip("模型凭记忆说的，不来自任何可点开的网页。")
+            actions.addWidget(self.open_button)
 
         self.discuss_button = QPushButton("就这个话题讨论")
         self.discuss_button.setToolTip("以这条热点为题开一场讨论（进入事件讨论分区）；条目本身会作为讨论线索，并保留它的来源与时间标注。")
@@ -390,6 +398,10 @@ class HotspotPage(QWidget):
         message = result.message
         if result.used_cache and result.last_success_at:
             message += f" · 上次成功更新于 {_stamp(result.last_success_at)}"
+            age_days = (datetime.now(result.last_success_at.tzinfo) - result.last_success_at).days
+            if age_days >= 1:
+                # 报告里这条被点名：缓存放了十几天也和刚出炉的一样显示，容易把人误导。
+                message = f"这是 {age_days} 天前的缓存，可能已经过时。" + message
         elif result.fetched_at:
             message += f" · 更新于 {_stamp(result.fetched_at)}"
         self.status_label.setText(message)

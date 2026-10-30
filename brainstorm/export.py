@@ -6,8 +6,28 @@ import json
 from pathlib import Path
 
 from .models import DiscussionSession
-from .roles import SECTION_TEXT, face_label
+from .roles import SECTION_TEXT, face_label, mode_label, role_name
 from .storage import session_to_dict
+
+MODE_IN_PLAIN_WORDS = {
+    "offline": "离线模拟",
+    "model": "真实模型",
+    "mixed": "真实模型 + 离线模拟",
+    "user": "你自己",
+}
+
+STATUS_IN_PLAIN_WORDS = {
+    "offline": "离线模拟",
+    "generated": "已生成",
+    "user_finished": "你提前结束了讨论",
+    "failed": "生成失败",
+}
+
+PROVIDER_IN_PLAIN_WORDS = {"mock": "离线模拟", "llm": "真实模型"}
+
+def plain(value: str, table: dict[str, str]) -> str:
+    """Never export a bare internal code where a Chinese word fits."""
+    return table.get(value, value or "无")
 
 
 def export_json(session: DiscussionSession, path: Path) -> Path:
@@ -23,9 +43,10 @@ def export_markdown(session: DiscussionSession, path: Path) -> Path:
         "",
         "## 来源与证据",
         "",
-        f"- 请求模式：{session.request_mode}",
-        f"- 实际讨论提供方：{session.effective_provider}",
-        f"- 实际模式：{session.provider_mode}",
+        f"- 请求模式：{plain(session.request_mode, MODE_IN_PLAIN_WORDS)}",
+        f"- 实际讨论提供方：{plain(session.effective_provider, PROVIDER_IN_PLAIN_WORDS)}",
+        f"- 实际模式：{plain(session.provider_mode, MODE_IN_PLAIN_WORDS)}",
+        f"- 分区：{mode_label(session.mode)}",
         f"- 内容来源：{session.content_label}",
         f"- 观点生成说明：{session.viewpoint_source_description.replace(chr(10), ' ')}",
         f"- 新闻提供方：{session.news_provider}",
@@ -36,7 +57,7 @@ def export_markdown(session: DiscussionSession, path: Path) -> Path:
         f"- 网络使用：{'是' if session.network_used else '否'}",
         f"- 状态：{session.status_message}",
         f"- 模型：{session.model_name or '未使用真实模型'}",
-        f"- 生成状态：{session.generation_status}",
+        f"- 生成状态：{plain(session.generation_status, STATUS_IN_PLAIN_WORDS)}",
         f"- 生成阶段：{session.generation_stage or '无'}",
         f"- 流式完成：{'是' if session.generation_streamed else '否'}",
         f"- 使用量：输入 {session.usage_input_tokens} / 输出 {session.usage_output_tokens} tokens；请求 {session.usage_requests} 次",
@@ -80,12 +101,15 @@ def export_markdown(session: DiscussionSession, path: Path) -> Path:
             (text["label_next_steps"], card.next_steps),
         ):
             lines.extend([f"### {title}", *[f"- {value}" for value in values], ""])
-        lines.extend([f"**观点分布：** {card.stance_counts}", ""])
+        distribution = "；".join(f"{key} {value} 条" for key, value in card.stance_counts.items())
+        lines.extend([f"**观点分布：** {distribution or '暂无统计'}", ""])
     state = session.discussion_state
     consensus = [f"- {value}" for value in state.consensus] or ["- 暂无记录"]
     conflicts = [f"- {value}" for value in state.conflicts] or ["- 暂无记录"]
     questions = [f"- {value}" for value in state.unresolved_questions] or ["- 暂无记录"]
-    stances = [f"- {key}：{value}" for key, value in state.role_stances.items()] or ["- 暂无记录"]
+    stances = [
+        f"- {role_name(session.mode, key)}：{value}" for key, value in state.role_stances.items()
+    ] or ["- 暂无记录"]
     lines.extend(["## 讨论状态", "", "### 当前共识", *consensus, ""])
     lines.extend(["### 未解决分歧", *conflicts, ""])
     lines.extend(["### 未回答问题", *questions, ""])

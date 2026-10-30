@@ -13,6 +13,7 @@ from .models import DiscussionSession, Role, TrendSource, Utterance, ViewpointKi
 from .news import NewsFetchResult, NewsProvider, OfflineNewsProvider
 from .playback import DiscussionPlayback, PlaybackState
 from .providers import IntegrationStatus
+from .orchestration import derive_state
 from .roles import mode_for_roles
 from .storage import SessionStore
 from .turn_planner import detect_intervention, mark_duplicates
@@ -282,6 +283,8 @@ class SessionController(QObject):
         live.usage_input_tokens = finished.usage_input_tokens
         live.usage_output_tokens = finished.usage_output_tokens
         live.usage_requests = finished.usage_requests
+        if live.usage_requests > 0:
+            live.network_used = True
         live.model_name = finished.model_name
         live.generation_status = finished.generation_status
         live.generation_stage = finished.generation_stage
@@ -343,9 +346,11 @@ class SessionController(QObject):
         session.effective_provider = "mock" if provider_failed else self.integration_status.discussion_provider
         session.provider_mode = "offline" if provider_failed else self.integration_status.effective_mode
         session.news_provider = self.integration_status.news_provider
-        # Network use means matched RSS material was actually adopted. A
-        # partial feed failure can still provide usable sources.
-        session.network_used = bool(news_result and news_result.matched)
+        # Network use means the discussion actually talked to something outside
+        # this machine: matched RSS material, or model requests. The report's C1
+        # showed three real-model sessions labelled 未使用网络 while the same
+        # session recorded 13 requests.
+        session.network_used = bool(news_result and news_result.matched) or session.usage_requests > 0
         session.news_attempted = bool(news_result and news_result.attempted)
         session.news_success = bool(news_result is None or news_result.success)
         session.news_matched = bool(news_result and news_result.matched)
@@ -354,8 +359,12 @@ class SessionController(QObject):
             session.fallback_reason
             or (news_result.message if news_result else self.integration_status.describe())
         )
-        if news_result and not news_result.success:
+        # C2：只有真的抓过素材、并且抓失败到没有可用来源时，才算“回退原因”。
+        # 没勾 RSS 的那一场不该背着上一次的失败信息。
+        if news_result and news_result.attempted and not news_result.success and not news_result.sources:
             session.fallback_reason = news_result.message
+        elif not (news_result and news_result.attempted):
+            session.fallback_reason = ""
         self._discussion_batch = 0
         self.playback.live = True
         if already_started:
@@ -607,11 +616,20 @@ class SessionController(QObject):
         # it costs no extra call. The worker only sets the attribute; applying it
         # to the session happens here, on the GUI thread.
         refresh = getattr(self.provider, "last_state_refresh", None)
+        state = self.session.discussion_state
         if refresh is not None:
-            self.session.discussion_state.consensus = list(refresh.consensus)
-            self.session.discussion_state.conflicts = list(refresh.conflicts)
-            self.session.discussion_state.unresolved_questions = list(refresh.unresolved)
+            state.consensus = list(refresh.consensus)
+            state.conflicts = list(refresh.conflicts)
+            state.unresolved_questions = list(refresh.unresolved)
             self.provider.last_state_refresh = None
+        # 模型经常整段留空，档案就读成「暂无记录」。空着的用桌上的原话补，
+        # 模型自己读出来的内容一律不动。
+        consensus, conflicts, questions = derive_state(self.session)
+        state.consensus = state.consensus or consensus
+        state.conflicts = state.conflicts or conflicts
+        state.unresolved_questions = state.unresolved_questions or questions
+        # 同一件事：模型写不全的档案小节，用桌上已有的观点补齐。
+        MockDiscussionProvider._refresh_opportunity(self.session, fill_missing=True)
         if any(item.speaker_id == "moderator" and item.phase == "状态整理" for item in items):
             self.session.discussion_state.host_intervention_reason = detect_intervention(self.session)[1]
         elif any(item.speaker_id != "moderator" for item in items):
@@ -643,10 +661,11 @@ class SessionController(QObject):
         if self.session is None or self.playback.state == PlaybackState.COMPLETED:
             return
         self.timer.stop()
-        self.session.utterances[:] = [
-            item for index, item in enumerate(self.session.utterances)
-            if index <= self.playback.index or item.speaker_id == "user"
-        ]
+        # 提前结束时先掐掉后台还在生成的发言：否则档案记 8 条、回头打开变 13 条。
+        self._cancel_batch(emit_state=False)
+        # 已经生成好的发言一律保留。以前按播放游标截断，用户提前结束时
+        # 刚轮到的那几条会被删掉，档案里却留着它们的立场，数据对不上。
+        self.session.rebuild_state()
         MockDiscussionProvider._refresh_opportunity(self.session)
         self.session.generation_status = "user_finished"
         self.playback.finish()

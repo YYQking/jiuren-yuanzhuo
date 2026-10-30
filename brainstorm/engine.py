@@ -573,7 +573,7 @@ class MockDiscussionProvider:
         return state
 
     @staticmethod
-    def _refresh_opportunity(session: DiscussionSession) -> None:
+    def _refresh_opportunity(session: DiscussionSession, *, fill_missing: bool = False) -> None:
         if session.opportunity is None:
             return
         items = [item for item in session.utterances if item.speaker_id not in {"user", "moderator"}]
@@ -585,11 +585,17 @@ class MockDiscussionProvider:
         }
         def points(kinds):
             return list(dict.fromkeys(f"{item.speaker_name}：{item.content}" for item in items if item.kind in kinds))[-12:]
-        session.opportunity.support = points({ViewpointKind.OPPORTUNITY})
-        session.opportunity.risks = points({ViewpointKind.RISK})
-        session.opportunity.assumptions = points({ViewpointKind.ASSUMPTION, ViewpointKind.FACT})
+        def put(field: str, value: list[str]) -> None:
+            # 模型常常整节留空，而桌上明明已经有答案；只补空的那几节，
+            # 模型自己写了的内容一律不动，档案就不会读成「暂无记录」。
+            if fill_missing and getattr(session.opportunity, field):
+                return
+            setattr(session.opportunity, field, value)
+        put("support", points({ViewpointKind.OPPORTUNITY}))
+        put("risks", points({ViewpointKind.RISK}))
+        put("assumptions", points({ViewpointKind.ASSUMPTION, ViewpointKind.FACT}))
         validation = points({ViewpointKind.VALIDATION})
-        session.opportunity.next_steps = validation or ["先明确目标人群并安排访谈，核对讨论中的前提", "对比现有替代方案，制作单一场景原型进行验证"]
+        put("next_steps", validation or ["先明确目标人群并安排访谈，核对讨论中的前提", "对比现有替代方案，制作单一场景原型进行验证"])
 
     @staticmethod
     def _add(session: DiscussionSession, speaker_id: str, speaker_name: str, content: str, kind: ViewpointKind, phase: str, replies_to: str | None = None) -> Utterance:

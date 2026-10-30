@@ -310,25 +310,24 @@ class QtUiTests(unittest.TestCase):
         card.mouseReleaseEvent(event)
         self.assertEqual(requests, ["点卡片也能开讨论"])
 
-    def test_main_window_starts_a_discussion_from_a_hotspot_card(self):
+    def test_hotspot_card_fills_the_lobby_instead_of_jumping_straight_in(self):
+        # 报告 B7：点一条热点就直接开桌，而且开的可能不是那一件事。
+        # 现在只把题目和线索填进大厅，让人看一眼再自己按开桌。
         with patch("brainstorm.qt_app.SessionStore", return_value=self.store):
             window = MainWindow()
         try:
             started = []
             window._start = lambda topic, roles, note, fetch_news=False: started.append((topic, roles, note, fetch_news))
             window._discuss_hotspot("某热点事件", "来自社会热点雷达的 AI 回忆条目：某热点事件。")
-            self.assertEqual(len(started), 1)
-            topic, roles, note, fetch_news = started[0]
-            self.assertEqual(topic, "某热点事件")
-            self.assertIn("AI 回忆", note)
-            self.assertTrue(roles, "没有勾选角色时应当回退到全部八个，而不是开一张空桌")
-            self.assertEqual(
-                {role.id for role in roles}, set(EVENT_ROLE_IDS),
-                "热点是事件，应当坐事件讨论分区的八个席位，而不是商业痛点的九个人",
-            )
-            self.assertEqual(window.lobby.mode, "event")
-            self.assertFalse(fetch_news)
+            self.assertEqual(started, [], "不该在大厅确认之前就开桌")
+            self.assertIs(window.stack.currentWidget(), window.lobby)
             self.assertEqual(window.lobby.topic.text(), "某热点事件")
+            self.assertIn("AI 回忆", window.lobby.source.toPlainText())
+            self.assertEqual(window.lobby.mode, "event")
+            self.assertEqual(
+                {role.id for role in window.lobby.selected_roles()}, set(EVENT_ROLE_IDS),
+                "热点是事件，大厅应当坐事件讨论分区的八个席位，而不是商业痛点的九个人",
+            )
         finally:
             window.close()
 
@@ -353,13 +352,14 @@ class QtUiTests(unittest.TestCase):
         finally:
             window.close()
 
-    def test_malformed_news_link_disables_action_without_breaking_page(self):
+    def test_malformed_news_link_says_there_is_no_link_instead_of_a_dead_button(self):
         from brainstorm.hotspots import HotspotFetchResult, HotspotItem
         from brainstorm.qt_app import HotspotPage
         page = HotspotPage(network_allowed=False)
         page.set_result(HotspotFetchResult([HotspotItem("坏链接", url="https://[invalid")]))
         self.assertEqual([item.title for item in page.visible_items], ["坏链接"])
-        self.assertFalse(page.general_section.cards[0].open_button.isEnabled())
+        # 以前是一颗点不动的灰按钮，看着像坏了；现在直接写清楚没有链接。
+        self.assertIn("没有原文链接", page.general_section.cards[0].open_button.text())
 
     def test_lobby_defaults_to_fetching_news_and_badge_tracks_checkbox(self):
         with patch.dict("os.environ", {}, clear=True):
@@ -528,7 +528,9 @@ class QtUiTests(unittest.TestCase):
         self.assertIs(self.controller.playback.current, next_role_utterance)
         self.assertEqual(page.transcript.toPlainText().count("请讨论无障碍体验"), 1)
         self.controller.finish_discussion()
-        self.assertEqual([item.speaker_id for item in session.utterances], ["moderator", "user", next_role_utterance.speaker_id])
+        # 提前结束不再按游标删掉已生成的发言，只要求插话留在原位、后面的轮次还在。
+        self.assertEqual([item.speaker_id for item in session.utterances[:2]], ["moderator", "user"])
+        self.assertIn(next_role_utterance.event_id, {item.event_id for item in session.utterances})
 
     def test_history_opens_summary_without_starting_discussion(self):
         session = MockDiscussionProvider().discuss("历史主题", DEFAULT_ROLES)

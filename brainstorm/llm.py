@@ -118,6 +118,10 @@ class TurnSpec:
     phase: str
     kind_hint: str = "假设"
     final: bool = False
+    # 这一轮该回应的是哪一条。模型经常把 replies_to 填成 null，可这一轮本来
+    # 就是冲着某个人去的（尤其是用户插话），必须落下来，否则「下一批回应」
+    # 只是界面上一句话。
+    reply_to_event_id: str = ""
 
 
 def _viewpoint_kind(value: object, hint: str = "") -> ViewpointKind:
@@ -384,7 +388,8 @@ class AnthropicDiscussionProvider:
             selected,
             list(session.sources),
             list(session.utterances),
-            TurnSpec(plan.speaker_id, plan.speaker_name, plan.phase, plan.kind_hint),
+            TurnSpec(plan.speaker_id, plan.speaker_name, plan.phase, plan.kind_hint,
+                     reply_to_event_id=plan.reply_to_event_id or ""),
             on_partial=(lambda text: on_partial(speaker.name, text)) if on_partial else None,
             cancel_event=cancel_event,
             state=state,
@@ -417,7 +422,8 @@ class AnthropicDiscussionProvider:
                 selected,
                 list(session.sources),
                 list(session.utterances),
-                TurnSpec(plan.speaker_id, plan.speaker_name, plan.phase, plan.kind_hint),
+                TurnSpec(plan.speaker_id, plan.speaker_name, plan.phase, plan.kind_hint,
+                     reply_to_event_id=plan.reply_to_event_id or ""),
                 on_partial=(lambda text: on_partial(speaker.name, text)) if on_partial else None,
                 cancel_event=cancel_event,
                 state=state,
@@ -801,6 +807,10 @@ class AnthropicDiscussionProvider:
                 ),
                 None,
             )
+        if replies_to is None and spec.reply_to_event_id:
+            # 计划里写明这一轮必须回应某条发言（例如用户插话），模型却填了 null；
+            # 以计划为准，否则档案里那一条「下一批回应」永远没有落点。
+            replies_to = spec.reply_to_event_id
         intent = data.get("intent", "initial")
         if intent not in {"initial", "support", "challenge", "question", "elaborate", "synthesize"}:
             intent = "initial"
@@ -852,7 +862,37 @@ class AnthropicDiscussionProvider:
                 "保留/假设": sum(item.kind in (ViewpointKind.ASSUMPTION, ViewpointKind.VALIDATION) for item in seen),
                 "风险/反对": sum(item.kind == ViewpointKind.RISK for item in seen),
             }
+            _fill_empty_card_sections(opportunity, seen)
         return utterance, opportunity
+
+
+def _fill_empty_card_sections(card: OpportunityCard, utterances: Sequence[Utterance]) -> None:
+    """模型常常只写标题和目标用户，四栏留着空。
+
+    报告 B5：在线模式的「主要风险」「站得住的理由」成片空白，而离线模板反而
+    四栏齐全。空着不是“没有风险”，是模型没填。这里退一步：从已经说过的发言里
+    按类型把点收起来，标注清楚来源，总比一片「暂无记录」有用。
+    """
+
+    def pick(kinds: set[ViewpointKind], limit: int = 4) -> list[str]:
+        picked: list[str] = []
+        for item in utterances:
+            if item.kind in kinds and item.content.strip():
+                text = item.content.strip()[:160]
+                if text not in picked:
+                    picked.append(text)
+            if len(picked) >= limit:
+                break
+        return picked
+
+    if not card.support:
+        card.support = pick({ViewpointKind.OPPORTUNITY, ViewpointKind.FACT})
+    if not card.risks:
+        card.risks = pick({ViewpointKind.RISK})
+    if not card.assumptions:
+        card.assumptions = pick({ViewpointKind.ASSUMPTION})
+    if not card.next_steps:
+        card.next_steps = ["先按上面提到过的疑点做一轮核实，再决定要不要继续。"]
 
 
 def _ensure_reaction(

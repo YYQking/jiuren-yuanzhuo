@@ -477,15 +477,26 @@ class GenerationControllerTests(unittest.TestCase):
         self.assertEqual(controller.playback.state.value, "paused")
         self.assertFalse(controller.timer.isActive())
 
-    def test_manual_finish_keeps_only_presented_turns_and_user_input(self):
+    def test_manual_finish_keeps_generated_turns_and_user_input(self):
+        # 以前提前结束会按播放游标把已生成的发言截掉，档案里却留着它们的立场，
+        # 报告里就变成「共 1 条发言」却有 8 条立场。生成过的东西不能因为没轮到就删。
         controller = self.track(SessionController(store=SessionStore(self._history_tmp)))
         controller.start("提前结束", [ROLE])
         process_until(lambda: controller.session is not None)
+        generated = len(controller.session.utterances)
+        self.assertGreater(generated, 1)
         controller.add_interjection("优先考虑老年人")
         controller.finish_discussion()
-        self.assertEqual(len(controller.session.utterances), 2)
-        self.assertEqual(controller.session.utterances[-1].speaker_id, "user")
-        self.assertEqual(sum(controller.session.opportunity.stance_counts.values()), 0)
+        self.assertGreaterEqual(len(controller.session.utterances), generated + 1)
+        # 插话插在「已经演到的那一条」之后，不是追加到末尾；只要它在、且只出现一次。
+        self.assertEqual(
+            [item.speaker_id for item in controller.session.utterances].count("user"), 1
+        )
+        seats = [item for item in controller.session.utterances if item.speaker_id not in {"user", "moderator"}]
+        # 立场必须与留下来的发言对得上，不能多也不能少。
+        self.assertEqual(sum(controller.session.opportunity.stance_counts.values()), len(seats))
+        self.assertEqual(set(controller.session.discussion_state.role_stances), {item.speaker_id for item in seats})
+
 
 
 if __name__ == "__main__":

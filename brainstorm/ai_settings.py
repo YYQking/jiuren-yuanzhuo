@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from PySide6.QtWidgets import QCheckBox, QDialog, QDialogButtonBox, QLabel, QLineEdit, QVBoxLayout
+from PySide6.QtWidgets import QCheckBox, QDialog, QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout
 
 
 def endpoint_url(base_url):
@@ -92,10 +92,58 @@ class AISettingsDialog(QDialog):
         self.status = QLabel('未测试连接；保存配置不代表服务请求成功。')
         self.status.setWordWrap(True)
         root.addWidget(self.status)
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
-        buttons.accepted.connect(self._save)
-        buttons.rejected.connect(self.reject)
-        root.addWidget(buttons)
+        actions = QHBoxLayout()
+        self.test_button = QPushButton('测试连接')
+        self.test_button.clicked.connect(self._test)
+        actions.addWidget(self.test_button)
+        actions.addStretch()
+        for text, slot in (('保存', self._save), ('取消', self.reject)):
+            button = QPushButton(text)
+            button.clicked.connect(slot)
+            actions.addWidget(button)
+        root.addLayout(actions)
+
+    def _test(self):
+        """真的发一次最短请求，只看能不能连上、能不能拿到回复。
+
+        报告里这条按钮是缺的：界面写着「未测试连接」，却没地方点。这里用当前
+        填的内容当场试，不写盘、不改配置；失败也把原因原样说出来。
+        """
+        import urllib.request
+
+        base = self.address.text().strip()
+        model = self.model.text().strip()
+        key = self.key.text().strip()
+        if not base or not model or not key:
+            self.status.setText('测试需要接口地址、模型名称和 API Key 三项都填好。')
+            return
+        self.status.setText('正在测试连接……')
+        self.test_button.setEnabled(False)
+        try:
+            payload = json.dumps({
+                'model': model,
+                'max_tokens': 16,
+                'messages': [{'role': 'user', 'content': '只回复两个字：可以。'}],
+            }).encode('utf-8')
+            request = urllib.request.Request(
+                endpoint_url(base), data=payload,
+                headers={'Authorization': f'Bearer {key}', 'Content-Type': 'application/json',
+                         'User-Agent': 'NineRoundtable/1.0'}, method='POST')
+            with urllib.request.urlopen(request, timeout=20) as response:
+                data = json.loads(response.read(1024 * 1024).decode('utf-8'))
+            choices = data.get('choices') if isinstance(data, dict) else None
+            message = choices[0].get('message') if choices and isinstance(choices[0], dict) else None
+            text = message.get('content') if isinstance(message, dict) else None
+            if not isinstance(text, str) or not text.strip():
+                raise ValueError('接口回话了，但内容是空的')
+        except Exception as exc:  # 网络层什么都能抛，界面不能因此崩掉
+            reason = getattr(exc, 'reason', exc)
+            self.status.setText(f'连不上：{reason}（密钥没有保存，配置也没改）')
+        else:
+            self.status.setText('连接正常，模型已回话。保存之后才对下一次讨论生效。')
+        finally:
+            self.test_button.setEnabled(True)
+
 
     def _save(self):
         try:

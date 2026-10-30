@@ -244,3 +244,31 @@ def parse_review(text: str) -> Review:
     else:
         passed = bool(data.get("passed"))
     return Review(passed=passed, repeats=repeats, avoided=avoided, fabricated=fabricated)
+
+
+def derive_state(session: DiscussionSession, *, limit: int = 3, width: int = 70) -> tuple[list[str], list[str], list[str]]:
+    """Read consensus, conflicts and open questions out of the transcript.
+
+    The orchestrator's own read-out comes back empty far too often: nine
+    sessions in a row showed 暂无记录 even though people were clearly arguing.
+    This deterministic fallback only fills what the model left blank, and it
+    quotes the table instead of inventing anything.
+    """
+    seats = [item for item in session.utterances if item.speaker_id not in {"user", "moderator"}]
+    def pick(intents: tuple[str, ...]) -> list[str]:
+        seen: dict[str, None] = {}
+        for item in seats:
+            if item.intent in intents:
+                seen[f"{item.speaker_name}：{item.content[:width]}"] = None
+        return list(seen)[-limit:]
+    consensus: list[str] = []
+    for item in session.utterances:
+        if item.speaker_id == "moderator" and item.phase == "状态整理":
+            consensus = [f"{item.content[:width]}"]
+    if not consensus:
+        # 还没有主持人做状态整理（讨论短、或提前结束）：此时桌上“有人附和”的
+        # 那几句话就是当前最能算共识的证据，比一片「暂无记录」有用。
+        consensus = pick(("support", "synthesize"))
+    conflicts = pick(("challenge", "反驳", "质疑"))
+    questions = pick(("question", "追问"))
+    return consensus, conflicts, questions

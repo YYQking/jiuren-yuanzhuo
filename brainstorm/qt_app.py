@@ -72,10 +72,34 @@ from .model_hotspots import HybridHotspotProvider, ModelHotspotProvider
 from .mood import mood_label, mood_of, quiet_seats
 from .providers import resolve_providers
 from .qt_theme import COLORS, app_stylesheet, title_font
-from .roles import DEFAULT_ROLES, ROLES_BY_MODE, SECTION_TEXT, default_roles_for, face_label
+from .roles import (
+    DEFAULT_ROLES,
+    ROLES_BY_MODE,
+    SECTION_TEXT,
+    default_roles_for,
+    face_label,
+    mode_label,
+    role_name,
+)
 from .roundtable import RoundtableCanvas
 from .session_controller import SessionController
 from .storage import SessionStore
+
+
+def export_target(path: str, selected: str) -> tuple[Path, str]:
+    """Decide what the user asked to write from the name and the chosen filter.
+
+    The old code trusted the filter first, so typing ``讨论.json`` while the
+    "Markdown" filter was highlighted wrote Markdown into a file named .json,
+    and the file could not be read back.  The extension now wins whenever the
+    user typed one; the filter only supplies the suffix when they did not.
+    """
+    target = Path(path)
+    suffix = target.suffix.lower()
+    if suffix not in {".md", ".json"}:
+        suffix = ".json" if selected.startswith("JSON") else ".md"
+        target = target.with_suffix(suffix)
+    return target, suffix.lstrip(".")
 
 
 def avatar_pixmap(role_id: str, size: int) -> QPixmap:
@@ -245,6 +269,9 @@ class ActionButton(QPushButton):
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setMinimumHeight(40)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        # 自绘按钮对读屏软件是一块空白：不给名字，屏幕阅读器念不出它是干什么的。
+        self.setAccessibleName(text)
+        self.setAccessibleDescription(hint or text)
 
     # ── 外部可改的几项 ──────────────────────────────────────────
     def text(self) -> str:
@@ -252,11 +279,13 @@ class ActionButton(QPushButton):
 
     def setText(self, text: str) -> None:  # noqa: N802 - Qt 命名习惯
         self._text = text
+        self.setAccessibleName(text)
         self.updateGeometry()
         self.update()
 
     def set_hint(self, hint: str) -> None:
         self._hint = hint
+        self.setAccessibleDescription(hint)
         self.updateGeometry()
         self.update()
 
@@ -845,7 +874,7 @@ class LobbyPage(QWidget):
 
         footer = QHBoxLayout()
         footer.setSpacing(10)
-        self.deal_button = ActionButton("发 牌", kind="rotate", hint="")
+        self.deal_button = ActionButton("发 牌", kind="rotate", hint="D")
         self.deal_button.setObjectName("dealButton")
         self.deal_button.setMinimumHeight(44)
         self.deal_button.clicked.connect(self._deal)
@@ -864,6 +893,12 @@ class LobbyPage(QWidget):
         footer.addWidget(self.foot_note)
         footer.addStretch(1)
         outer.addLayout(footer)
+
+        # 提示单独一行：曾经直接盖在计数标签上，用户就看不到还剩几个人了
+        self.notice = QLabel("")
+        self.notice.setWordWrap(True)
+        self.notice.setStyleSheet(f"color: {COLORS['gold']}; font-size: 12px;")
+        outer.addWidget(self.notice)
 
         self.network_note = QLabel()
         self.network_note.setWordWrap(True)
@@ -1012,7 +1047,7 @@ class LobbyPage(QWidget):
             card.setChecked(True)
             card.blockSignals(False)
             card.set_down_style(False)
-            self.foot_note.setText("至少留两个人，不然没人说话。")
+            self.notify("至少留两个人，不然没人说话。")
             return
         card.set_down_style(not checked)
         if not self._dealt:
@@ -1021,6 +1056,11 @@ class LobbyPage(QWidget):
             self.deal_button.setText("重新发牌")
         self._layout_cards(animate=True)
         self._update_foot_note()
+
+    def notify(self, text: str) -> None:
+        """大厅自己那一行提示：说清楚哪里不对，不占计数位置。"""
+
+        self.notice.setText(text)
 
     def _update_foot_note(self) -> None:
         on_table = sum(1 for card in self._cards if card.isChecked())
@@ -1153,8 +1193,9 @@ class HistoryDialog(QDialog):
         self.resize(700, 460)
         layout = QVBoxLayout(self)
         self.list = QListWidget()
-        sessions = store.list_sessions()
-        for session in sessions:
+        # 按「讨论是什么时候开的」排序。按文件修改时间排会乱：一场讨论每说一句
+        # 都要存一次盘，排出来就成了谁最后被存过谁在最前面。
+        for session in sorted(store.list_sessions(), key=lambda item: item.created_at, reverse=True):
             item = QListWidgetItem(f"{session.created_at:%Y-%m-%d %H:%M}  ·  {session.topic}")
             item.setData(Qt.ItemDataRole.UserRole, session)
             self.list.addItem(item)
@@ -1163,8 +1204,8 @@ class HistoryDialog(QDialog):
         open_button = QPushButton("打开选中")
         open_button.clicked.connect(self._open_selected)
         layout.addWidget(open_button)
-        close = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
-        close.rejected.connect(self.reject)
+        close = QPushButton("关闭")
+        close.clicked.connect(self.reject)
         layout.addWidget(close)
 
     def _open_selected(self, _item=None) -> None:
@@ -1264,11 +1305,8 @@ class RoundtablePage(QWidget):
         export.clicked.connect(self._export)
         controls.addWidget(export)
         self.export_button = export
-        self.sound_button = QPushButton("声音：静默")
-        self.sound_button.setEnabled(False)
-        self.sound_button.setToolTip("当前版本没有音频资源，保持静默")
-        self.sound_button.clicked.connect(self._toggle_audio)
-        controls.addWidget(self.sound_button)
+        # 这颗「声音：静默」以前一直是灰的、点了也没反应，等于一个死按钮，
+        # 报告里被点名。当前版本本来就没有音频资源，直接不摆它。
         back = QPushButton("返回大厅")
         back.clicked.connect(self.back_requested)
         controls.addWidget(back)
@@ -1328,6 +1366,14 @@ class RoundtablePage(QWidget):
         self.transcript.setReadOnly(True)
         self.transcript.setStyleSheet("font-size: 15px;")
         drawer_layout.addWidget(self.transcript)
+        # 报告 D2：抽屉里的条目以前既选不中也复制不了。这两个框明确打开
+        # 「鼠标选、键盘选」，并且允许 Ctrl+C 把整段记录拷出去。
+        for widget in (self.evidence, self.transcript):
+            widget.setTextInteractionFlags(
+                Qt.TextInteractionFlag.TextSelectableByMouse
+                | Qt.TextInteractionFlag.TextSelectableByKeyboard
+            )
+            widget.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.drawer.setMinimumWidth(320)
         self.drawer.setMaximumWidth(460)
         self.drawer.setGeometry(self.width() - 430, 70, 400, max(300, self.height() - 150))
@@ -1344,7 +1390,6 @@ class RoundtablePage(QWidget):
         self.interjection.setMinimumHeight(36 if compact else 42)
         self.skip_button.setVisible(not compact)
         self.export_button.setVisible(not compact)
-        self.sound_button.setVisible(not compact)
         self.back_button.setVisible(True)
         self.records_button.setText("记录" if compact else "完整记录")
         current = self.controller.playback.current
@@ -1387,7 +1432,12 @@ class RoundtablePage(QWidget):
         self._history.clear()
         self.transcript.clear()
         self.evidence.clear()
-        self.topic_label.setText(QFontMetrics(self.topic_label.font()).elidedText(session.topic, Qt.TextElideMode.ElideMiddle, 440))
+        # 从尾巴截，中间省略会把一句话的语意切断（「多地小区……停车位纠纷」）。
+        self.topic_label.setText(
+            QFontMetrics(self.topic_label.font()).elidedText(
+                session.topic, Qt.TextElideMode.ElideRight, max(180, self.width() - 520)
+            )
+        )
         self.topic_label.setToolTip(session.topic)
         self._show_section_badge(session)
         self._show_integration(session)
@@ -1626,14 +1676,6 @@ class RoundtablePage(QWidget):
         width = min(460, max(320, self.width() // 3))
         return QRect(self.width() - width - 22, 70, width, max(300, self.height() - 150))
 
-    def _toggle_audio(self) -> None:
-        if self.audio is None:
-            return
-        enabled = not (self.audio.ambient_enabled or self.audio.effects_enabled)
-        self.audio.set_ambient(enabled)
-        self.audio.set_effects(enabled)
-        self.sound_button.setText("声音：已启用" if enabled else "声音：静音")
-
     def _role_info(self, role: Role) -> None:
         QMessageBox.information(self, role.name, f"{role.duty}\n\n视角提示：{role.prompt}")
 
@@ -1643,10 +1685,11 @@ class RoundtablePage(QWidget):
         path, selected = QFileDialog.getSaveFileName(self, "导出讨论", str(Path.home()), "Markdown (*.md);;JSON (*.json)")
         if not path:
             return
-        if selected.startswith("Markdown") or path.lower().endswith(".md"):
-            export_markdown(self.session, Path(path))
+        target, kind = export_target(path, selected)
+        if kind == "json":
+            export_json(self.session, target)
         else:
-            export_json(self.session, Path(path))
+            export_markdown(self.session, target)
 
     def _error(self, message: str) -> None:
         QMessageBox.warning(self, "还需要一点信息", message)
@@ -1745,8 +1788,11 @@ class SummaryPage(QWidget):
         card = session.opportunity
         text = SECTION_TEXT.get(session.mode, SECTION_TEXT["business"])
         self.title_label.setText(text["archive_title"])
+        # C6：同一场在两个地方数出不同的“共 N 条”。这里把口径写死并说清楚：
+        # 从第一句话到最后一句都在同一个列表里，含主持人。
+        seats = sum(1 for item in session.utterances if item.speaker_id not in {"moderator", "user"})
         self.summary_meta.setText(
-            f"{session.topic}  ·  共 {len(session.utterances)} 条发言  ·  "
+            f"{session.topic}  ·  共 {len(session.utterances)} 条发言（席位 {seats} 条 + 主持人及其他）  ·  "
             f"{session.content_label}"
         )
         if card is None:
@@ -1763,10 +1809,13 @@ class SummaryPage(QWidget):
         self._add_list_section("未解决分歧", state.conflicts)
         self._add_list_section("未回答问题", state.unresolved_questions)
         stance_lines = [
-            f"{role_id}：{stance}" for role_id, stance in state.role_stances.items()
+            f"{role_name(session.mode, role_id)}：{stance}"
+            for role_id, stance in state.role_stances.items()
         ]
         self._add_list_section("立场轨迹", stance_lines)
-        distribution = "\n".join(f"{key}：{value}" for key, value in card.stance_counts.items()) or "暂无统计"
+        distribution = "\n".join(
+            f"{key} {value} 条" for key, value in card.stance_counts.items()
+        ) or "暂无统计"
         self._add_section("观点分布", distribution)
         self._add_section(
             "来源与生成状态",
@@ -1811,13 +1860,17 @@ class SummaryPage(QWidget):
     def _export(self) -> None:
         if self.session is None:
             return
-        path, selected = QFileDialog.getSaveFileName(self, "导出机会档案", str(Path.home()), "Markdown (*.md);;JSON (*.json)")
+        text = SECTION_TEXT.get(self.session.mode, SECTION_TEXT["business"])
+        path, selected = QFileDialog.getSaveFileName(
+            self, f"导出{text['archive_title']}", str(Path.home()), "Markdown (*.md);;JSON (*.json)"
+        )
         if not path:
             return
-        if selected.startswith("Markdown") or path.lower().endswith(".md"):
-            export_markdown(self.session, Path(path))
+        target, kind = export_target(path, selected)
+        if kind == "json":
+            export_json(self.session, target)
         else:
-            export_json(self.session, Path(path))
+            export_markdown(self.session, target)
 
 
 class MainWindow(QMainWindow):
@@ -1885,6 +1938,13 @@ class MainWindow(QMainWindow):
         self.showFullScreen()
 
     def _start(self, topic: str, roles: list[Role], source: str, fetch_news: bool = False) -> None:
+        topic = (topic or "").strip()
+        if not topic:
+            # 校验必须发生在跳页之前，否则先跳到圆桌、后弹窗，还顺手抓了素材
+            self.lobby.notify("先写一句要聊什么，再开桌。")
+            self.stack.setCurrentWidget(self.lobby)
+            return
+        self.lobby.notify("")
         self.roundtable.set_selected_roles(roles)
         self.stack.setCurrentWidget(self.roundtable)
         self.controller.start(topic, roles, source, fetch_news=fetch_news)
@@ -1903,10 +1963,12 @@ class MainWindow(QMainWindow):
         if not topic:
             return
         self.lobby.set_mode("event")
-        roles = self.lobby.selected_roles() or default_roles_for("event")
         self.lobby.topic.setText(topic)
         self.lobby.source.setPlainText(note)
-        self._start(topic, roles, note, fetch_news=False)
+        # 回到大厅让用户确认一眼再开桌。以前点了卡片就直接开桌，万一卡片认错
+        # （热点列表还会刷新重排），人还没看清就已经在聊另一件事了。
+        self.stack.setCurrentWidget(self.lobby)
+        self.lobby.topic.setFocus()
 
     def _seats_from_session(self, session: DiscussionSession) -> list[Role]:
         """上一场坐了谁，这一场就还坐谁；一个都认不出来就整桌照旧。"""
@@ -1944,7 +2006,18 @@ class MainWindow(QMainWindow):
             self.controller.provider = provider
             self.controller.news_provider = news
             self.controller.integration_status = status
-            self.lobby.network_note.setText("AI 配置已保存，用于下一次讨论；尚未验证服务连接。" if self.config.allow_llm else "AI 已关闭，使用离线角色模板。")
+            # 这句是一次操作的回执，不该长期顶掉大厅底部那行「当前能不能联网、
+            # 会不会调模型」的状态。改走临时提示行，状态行照旧按真实配置刷新。
+            self.lobby.notify("AI 配置已保存，下一次讨论生效；服务连接尚未验证。")
+            if self.config.mode == "offline":
+                note = "当前已设置强制离线，新闻和模型均不会联网。"
+            elif not self.config.allow_network:
+                note = "当前未允许联网，讨论将使用离线模拟。"
+            elif self.config.allow_llm:
+                note = f"下一次讨论会调用真实模型（{self.config.llm_model}）；服务连接尚未验证。"
+            else:
+                note = "AI 已关闭，讨论使用离线角色模板。"
+            self.lobby.network_note.setText(note)
 
     def _history(self) -> None:
         dialog = HistoryDialog(self.store, self)
@@ -1967,6 +2040,18 @@ class MainWindow(QMainWindow):
     def _show_roundtable(self) -> None:
         self.stack.setCurrentWidget(self.roundtable)
 
+    def _refresh_lobby_state_note(self) -> None:
+        """C9：大厅那行要写「现在到底连没连上」，不能一直挂着上一次的操作回执。"""
+
+        session = self.controller.session
+        if session is None:
+            return
+        if session.effective_provider == "mock":
+            self.lobby.network_note.setText("上一场是离线模拟；观点仍需核验。")
+        else:
+            model = session.model_name or self.config.llm_model
+            self.lobby.network_note.setText(f"上一场用了真实模型 {model}；观点仍需核验。")
+
     def _back_to_lobby(self) -> None:
         self._back()
 
@@ -1974,6 +2059,7 @@ class MainWindow(QMainWindow):
         self.controller.cancel_generation(emit_state=False)
         self.controller.timer.stop()
         self.controller.save()
+        self._refresh_lobby_state_note()
         self.stack.setCurrentWidget(self.lobby)
 
     # 窗口三档：全屏 → 大窗 → 小窗 → 全屏。走到最小再点一次就回全屏
@@ -2036,6 +2122,14 @@ class MainWindow(QMainWindow):
             if self.roundtable.next_button.isEnabled():
                 self.controller.next_step()
                 return
+        # D = 大厅里重新发一次牌（牌面按钮上写着这个键，就要真的能用）
+        if (
+            event.key() == Qt.Key.Key_D
+            and self.stack.currentWidget() is self.lobby
+            and not self._typing_focus()
+        ):
+            self.lobby._deal()
+            return
         super().keyPressEvent(event)
 
     @staticmethod
